@@ -1,0 +1,8 @@
+docs/**
+.vscode/**
+__pycache__/
+# data
+data/
+!data/sample_data/
+configs/
+logs/

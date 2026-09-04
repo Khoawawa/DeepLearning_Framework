@@ -4,7 +4,7 @@
 ### [Phase 1 - FRAMEWORK CORE](https://github.com/Khoawawa/DeepLearning_Framework/tree/phase_1)
 
 #### Blocking
-- [ ] Create missing `configs/data/imagenet_top1k.yaml` (or fix the reference in `config.yaml` if the filename is wrong) — this is currently crashing `main.py` at config load time.
+- [x] Create missing `configs/data/imagenet_top1k.yaml` (or fix the reference in `config.yaml` if the filename is wrong) — this is currently crashing `main.py` at config load time.
 #### Trainer (`engines/trainer.py`)
 - [ ] **EMA update for target encoder** — `training_step` never updates `target_encoder` after freezing it (`requires_grad = False`). Add an `ema_update()` call after `optimizer.step()`.
 - [ ] **Target encoder init copy** — `target_encoder` should be initialized from `context_encoder`'s weights via `load_state_dict` at trainer init, not left at its own random init.

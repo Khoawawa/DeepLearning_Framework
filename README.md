@@ -3,8 +3,11 @@
 ## TODO
 ### [Phase 1 - FRAMEWORK CORE](https://github.com/Khoawawa/DeepLearning_Framework/tree/phase_1)
 #### Blocking
-- [ ] Create missing `configs/data/imagenet_top1k.yaml` (or fix the reference in `config.yaml` if the filename is wrong) — currently crashing `main.py` at config load time.
-#### BaseTrainer plumbing (`engines/trainer.py`)
+- [x] Create missing `configs/data/imagenet_top1k.yaml` (or fix the reference in `config.yaml` if the filename is wrong) — this is currently crashing `main.py` at config load time.
+#### Trainer (`engines/trainer.py`)
+- [ ] **EMA update for target encoder** — `training_step` never updates `target_encoder` after freezing it (`requires_grad = False`). Add an `ema_update()` call after `optimizer.step()`.
+- [ ] **Target encoder init copy** — `target_encoder` should be initialized from `context_encoder`'s weights via `load_state_dict` at trainer init, not left at its own random init.
+- [ ] Reconsider `loss = torch.stack(losses).sum()` vs `.mean()` — `.sum()` couples effective LR to the number of target blocks sampled per batch if `mask_sampler` returns a variable count.
 - [ ] Decide whether `fit()` should move `batch` to `self.device` before calling `training_step`, or leave that responsibility to the caller/subclass.
 - [ ] `load_state_dict` on subclasses will throw a raw `KeyError` if a checkpoint doesn't match the current component set (e.g. saved from a different model variant). Consider `strict=False` + logged mismatch warning once multiple model variants exist.
 #### Checkpointing

@@ -10,6 +10,8 @@ from tqdm import tqdm
 from typing import Any, Tuple
 from loguru import logger
 
+from engines.utils import to_var
+
 class BaseTrainer(ABC):
     def __init__(self) -> None:
         self.current_epoch: int = 0
@@ -28,31 +30,33 @@ class BaseTrainer(ABC):
         state = torch.load(checkpoint_path)
         self.load_state_dict(state)
         
-    def fit(self, data_loader: DataLoader, num_epochs: int, output_path: str | Path, call_backs: list[CallBack] | None = None, resume_path: str | Path | None = None) -> None:
+    def fit(self, data_loader: DataLoader, num_epochs: int, call_backs: list[CallBack] = [], resume_path: str | Path | None = None) -> None:
             resume_path = Path(resume_path) if resume_path is not None else None
             if resume_path is not None:
                 if not resume_path.exists():
                     logger.error(f"Resume path {resume_path} does not exist")
                     raise ValueError(f"Resume path {resume_path} does not exist")
                 self._load_from_checkpoint(resume_path)
-            call_backs = call_backs or []
             try:
                 for epoch in range(self.current_epoch, num_epochs):
                     for batch in tqdm(data_loader):
+                        # the principle for batch is that it must be a dict so we can be flexible depend on what is expected of the input of the model
+                        # this require the data loader to be a dict-based collate
+                        batch = to_var(batch, self.device)
                         metrics = self.training_step(batch)
                         for cb in call_backs:
-                            cb.on_step_end(metrics, self.global_step)
+                            cb.on_step_end(self, metrics, self.global_step)
                         self.global_step += 1
                     self.current_epoch += 1
                     
                     for cb in call_backs:
-                        cb.on_epoch_end(epoch)
+                        cb.on_epoch_end(self, epoch)
             except Exception:
                 logger.exception("Training failed at epoch={} step={}", self.current_epoch, self.global_step)
                 raise
             finally:
                 for cb in call_backs:
-                    cb.on_training_end()
+                    cb.on_training_end(self)
                 
                 
     @abstractmethod

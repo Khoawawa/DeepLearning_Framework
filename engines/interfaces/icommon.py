@@ -3,6 +3,8 @@ from abc import abstractmethod
 import torch
 from typing_extensions import Self
 
+from engines.interfaces.irunner import ITrainer
+
 @runtime_checkable
 class TorchModule(Protocol):
     training: bool
@@ -44,13 +46,13 @@ class Criterion(Protocol):
 @runtime_checkable
 class CallBack(Protocol):
     @abstractmethod
-    def on_step_end(self, metrics: dict[str, float], step: int) -> None:
+    def on_step_end(self, trainer: ITrainer, metrics: dict[str, float], step: int) -> None:
         ...
         
     @abstractmethod
-    def on_epoch_end(self, epoch: int) -> None:
+    def on_epoch_end(self, trainer: ITrainer, epoch: int) -> None:
         ...
         
     @abstractmethod
-    def on_training_end(self) -> None:
+    def on_training_end(self, trainer: ITrainer) -> None:
         ...

@@ -1,14 +1,18 @@
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
 import torch
 from torch.utils.data import DataLoader
 
-from engines.interfaces.icommon import CallBack
+from engines.interfaces.ifactory import IFactory
+
+if TYPE_CHECKING:
+    from engines.interfaces.icommon import CallBack
+
 
 @runtime_checkable
 class ITrainer(Protocol):
     
-    def fit(self, data_loader: DataLoader, num_epochs: int, output_path: str | Path, call_backs: list[CallBack] | None = None, resume_path: str | Path | None = None) -> None:
+    def fit(self, data_loader: DataLoader, num_epochs: int, call_backs: list[CallBack] = [], resume_path: str | Path | None = None) -> None:
         ...
     
     def training_step(self, x: torch.Tensor ) -> dict[str, float]:
@@ -17,7 +21,7 @@ class ITrainer(Protocol):
     def state_dict(self) -> dict[str, Any]:
         ...
     
-    def load_state_dict(self, state: dict[str, Any]) -> None:
+    def load_state_dict(self, state: dict[str, Any], strict: bool = True) -> None:
         ...
     
     def to(self, device: torch.device) -> "ITrainer":

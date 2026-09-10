@@ -2,6 +2,8 @@ import argparse
 from pathlib import Path
 import sys
 from types import TracebackType
+from engines.callbacks import build_callbacks
+from engines.interfaces.icommon import CallBack
 from engines.interfaces.ifactory import IFactory
 from engines.interfaces.irunner import ITrainer
 from engines.utils import resolve_factory
@@ -62,8 +64,10 @@ def run(args: argparse.Namespace) -> None:
         run_name=run_name
     )
     
-    factory : IFactory = resolve_factory(cfg.get("trainer_name", ""))
+    factory : IFactory = resolve_factory(cfg.get("factory_name", None))
 
+    call_backs: list[CallBack] = build_callbacks(cfg.get("callbacks", None), output_path=output_path)
+    
     if args.mode == "train":
         num_epochs = args.epochs if args.epochs > 0 else cfg.get("epochs", 0)
         if num_epochs <= 0:
@@ -71,7 +75,13 @@ def run(args: argparse.Namespace) -> None:
             raise ValueError("Please define the number of epochs in the config file or as a command line argument")
         dataloader = factory.build_dataloader(cfg["data"], is_train= True)
         trainer: ITrainer = factory.build_trainer(cfg["model"]).to(device)
-        trainer.fit(dataloader, num_epochs=num_epochs, output_path=output_path, resume_path=args.resume_path)
+        trainer.fit(
+            data_loader=dataloader,
+            num_epochs=num_epochs, 
+            resume_path=args.resume_path,
+            call_backs=call_backs
+            )
+        
     elif args.mode == "test":
         dataloader = factory.build_dataloader(cfg["data"], is_train = False)
         tester = factory.build_tester(cfg["model"]).to(device)

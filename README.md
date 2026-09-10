@@ -3,11 +3,14 @@
 ## TODO
 ### [Phase 1 - FRAMEWORK CORE](https://github.com/Khoawawa/DeepLearning_Framework/tree/phase_1)
 #### Critical
-- [ ] Currently the trainer and callback interface are blocking each other via cyclical referencing (see `icommon.py` and `itrainer.py`)
-- [x] Move data to the correct device after loading in `trainer.fit()`
-- [ ] 
+- [x] Currently the trainer and callback interface are blocking each other via cyclical referencing (see `icommon.py` and `itrainer.py`)
+- [x] Move data to the correct device after loading in `trainer.fit()` 
 #### Medium
+- [x] Refactor build trainer and factory
+- [ ] Build simple dataset for testing
 #### Low
+- [ ] Build ITester
+- [ ] Build simple Tester implementing ITester for testing
 
 #### Blocking
 - [x] Create missing `configs/data/imagenet_top1k.yaml` (or fix the reference in `config.yaml` if the filename is wrong) — this is currently crashing `main.py` at config load time.

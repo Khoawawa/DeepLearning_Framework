@@ -3,7 +3,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from engines.interfaces.icommon import Encoder, Predictor, MaskSampler, Criterion, CallBack, TorchModule
+from engines.interfaces.icommon import Encoder, Predictor, MaskSampler, Criterion, TorchModule
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -12,6 +12,7 @@ from loguru import logger
 
 from engines.interfaces.ifactory import IFactory
 from engines.interfaces.ibuilder import ITrainerBuilder
+from engines.interfaces.irunner import CallBack
 from engines.spec import TrainerBuildSpec
 from engines.utils import to_var
 
@@ -35,7 +36,8 @@ class BaseTrainer(ABC):
         state = torch.load(checkpoint_path)
         self.load_state_dict(state)
         
-    def fit(self, data_loader: DataLoader, num_epochs: int, call_backs: list[CallBack] = [], resume_path: str | Path | None = None) -> None:
+    def fit(self, data_loader: DataLoader, num_epochs: int, call_backs: list[CallBack] |None = None, resume_path: str | Path | None = None) -> None:
+            call_backs = call_backs if call_backs is not None else []
             resume_path = Path(resume_path) if resume_path is not None else None
             if resume_path is not None:
                 if not resume_path.exists():

@@ -4,7 +4,7 @@ from typing import Any
 
 import torch
 
-from engines.interfaces.icommon import CallBack
+from engines.interfaces.irunner import CallBack
 from loguru import logger
 
 from engines.interfaces.irunner import ITrainer

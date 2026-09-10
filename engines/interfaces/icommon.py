@@ -42,17 +42,3 @@ class Criterion(Protocol):
     @abstractmethod
     def __call__(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         ...
-
-@runtime_checkable
-class CallBack(Protocol):
-    @abstractmethod
-    def on_step_end(self, trainer: ITrainer, metrics: dict[str, float], step: int) -> None:
-        ...
-        
-    @abstractmethod
-    def on_epoch_end(self, trainer: ITrainer, epoch: int) -> None:
-        ...
-        
-    @abstractmethod
-    def on_training_end(self, trainer: ITrainer) -> None:
-        ...

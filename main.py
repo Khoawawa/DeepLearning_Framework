@@ -64,9 +64,9 @@ def run(args: argparse.Namespace) -> None:
         run_name=run_name
     )
     
-    factory : IFactory = resolve_factory(cfg.get("trainer_name", ""))
+    factory : IFactory = resolve_factory(cfg.get("factory_name", None))
 
-    call_backs: list[CallBack] = build_callbacks(cfg.get("callbacks", []), output_path=output_path)
+    call_backs: list[CallBack] = build_callbacks(cfg.get("callbacks", None), output_path=output_path)
     
     if args.mode == "train":
         num_epochs = args.epochs if args.epochs > 0 else cfg.get("epochs", 0)
@@ -81,6 +81,7 @@ def run(args: argparse.Namespace) -> None:
             resume_path=args.resume_path,
             call_backs=call_backs
             )
+        
     elif args.mode == "test":
         dataloader = factory.build_dataloader(cfg["data"], is_train = False)
         tester = factory.build_tester(cfg["model"]).to(device)

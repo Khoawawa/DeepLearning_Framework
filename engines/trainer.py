@@ -10,7 +10,12 @@ from tqdm import tqdm
 from typing import Any, Tuple
 from loguru import logger
 
+from engines.interfaces.ifactory import IFactory
+from engines.interfaces.ibuilder import ITrainerBuilder
+from engines.spec import TrainerBuildSpec
 from engines.utils import to_var
+
+
 
 class BaseTrainer(ABC):
     def __init__(self) -> None:
@@ -51,6 +56,7 @@ class BaseTrainer(ABC):
                     
                     for cb in call_backs:
                         cb.on_epoch_end(self, epoch)
+                        
             except Exception:
                 logger.exception("Training failed at epoch={} step={}", self.current_epoch, self.global_step)
                 raise
@@ -73,14 +79,28 @@ class BaseTrainer(ABC):
         state: dict[str,  Any] = dict(self.base_state())
         state.update(self._component_state_dict())
         return state
+    @abstractmethod
+    @classmethod
+    def required_components(cls) -> list[str]:
+        ...
+    @abstractmethod
+    @classmethod
+    def build_unique_kwargs(cls, cfg: dict[str, Any]) -> TrainerBuildSpec:
+        ...
+        
 
     @abstractmethod
-    def _load_component_state_dict(self, state: dict[str, Any]) -> None:
+    def _load_component_state_dict(self, state: dict[str, Any], strict: bool) -> None:
         ...
-    def load_state_dict(self, state: dict[str, Any]) -> None:
+    def load_state_dict(self, state: dict[str, Any], strict: bool = True) -> None:
+        # scenario where the checkpoint is not a trainer checkpoint but a model checkpoint, we will not have epoch and step keys in the state dict, therefore we will just set them to 0
+        if "epoch" not in state or "step" not in state:
+            logger.warning(
+                "Checkpoint missing epoch/step keys therefore setting them to 0"
+            )
         self.current_epoch = state.get("epoch", 0)
         self.global_step = state.get("step", 0)
-        self._load_component_state_dict(state)
+        self._load_component_state_dict(state, strict)
         
     @abstractmethod
     def _to_components(self, device: torch.device) -> None:
@@ -89,7 +109,7 @@ class BaseTrainer(ABC):
         self.device = device
         self._to_components(device)
         return self
-    
+
 class IJepaTrainer(BaseTrainer):
     def __init__(self
                  , context_encoder: Encoder
@@ -148,9 +168,9 @@ class IJepaTrainer(BaseTrainer):
         state["optimizer"] = self.optimizer.state_dict()
         return state
     
-    def _load_component_state_dict(self, state: dict[str, Any]) -> None:
+    def _load_component_state_dict(self, state: dict[str, Any], strict: bool = True) -> None:
         for k, v in self._get_components().items():
-            v.load_state_dict(state[k])
+            v.load_state_dict(state[k], strict=strict)
         self.optimizer.load_state_dict(state["optimizer"])
         
     def _to_components(self, device: torch.device) -> None:
@@ -163,4 +183,8 @@ class IJepaTrainer(BaseTrainer):
         return torch.gather(reprs, dim=1, index=idx.unsqueeze(-1).expand(-1, -1, reprs.size(-1)))
         
     
+    
+TRAINER_BUILDER_REGISTRY: dict[str, type[ITrainerBuilder]] = {
+    "ijepa": IJepaTrainer
+}
     

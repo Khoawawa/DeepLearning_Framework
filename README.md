@@ -5,8 +5,10 @@
 #### Critical
 - [ ] Currently the trainer and callback interface are blocking each other via cyclical referencing (see `icommon.py` and `itrainer.py`)
 - [x] Move data to the correct device after loading in `trainer.fit()`
+- [ ] 
 #### Medium
 #### Low
+
 #### Blocking
 - [x] Create missing `configs/data/imagenet_top1k.yaml` (or fix the reference in `config.yaml` if the filename is wrong) — this is currently crashing `main.py` at config load time.
 

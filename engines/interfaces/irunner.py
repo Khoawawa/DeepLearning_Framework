@@ -3,8 +3,11 @@ from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
 import torch
 from torch.utils.data import DataLoader
 
+from engines.interfaces.ifactory import IFactory
+
 if TYPE_CHECKING:
     from engines.interfaces.icommon import CallBack
+
 
 @runtime_checkable
 class ITrainer(Protocol):
@@ -18,7 +21,7 @@ class ITrainer(Protocol):
     def state_dict(self) -> dict[str, Any]:
         ...
     
-    def load_state_dict(self, state: dict[str, Any]) -> None:
+    def load_state_dict(self, state: dict[str, Any], strict: bool = True) -> None:
         ...
     
     def to(self, device: torch.device) -> "ITrainer":

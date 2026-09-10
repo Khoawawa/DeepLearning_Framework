@@ -89,8 +89,13 @@ CALLBACK_REGISTRY: dict[str, type[CallBack]] = {
     "checkpoint": CheckpointCallBack,
     "logging": LoggingCallBack
 }
-def build_callbacks(callback_configs: dict[str, dict[str, Any] | bool], output_path: str | Path) -> list[CallBack]:
+
+def build_callbacks(callback_configs: dict[str, dict[str, Any] | bool] | None, output_path: str | Path) -> list[CallBack]:
     callbacks: list[CallBack] = []
+    if callback_configs is None:
+        logger.warning("No callbacks were built. Please check your configuration if this is not intended.")
+        return callbacks
+    
     output_path = Path(output_path)
     for name, config in callback_configs.items():
         if name not in CALLBACK_REGISTRY:
@@ -109,7 +114,7 @@ def build_callbacks(callback_configs: dict[str, dict[str, Any] | bool], output_p
 
         callbacks.append(callback)
     if not callbacks:
-        logger.warning("No callbacks were built. Please check your configuration.")
+        logger.warning("No callbacks were built. Please check your configuration if this is not intended.")
     else:
         logger.info(f"Built callbacks: {', '.join([type(cb).__name__ for cb in callbacks])}")
     return callbacks

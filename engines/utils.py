@@ -6,24 +6,17 @@ from loguru import logger
 import numpy as np
 import torch
 
-from engines.factory import IJepaFactory
+from engines.factory import Factory
 from engines.interfaces.ifactory import IFactory
 
 
-FACTORY_REGISTRY: dict[str, type[IFactory]] = {
-    "i_jepa": IJepaFactory
-}
-
-def resolve_factory(trainer_name: str) -> IFactory:
-    if trainer_name == "":
-        logger.error("Factory not specified")
-        raise ValueError("Factory not specified")
-    if trainer_name not in FACTORY_REGISTRY:
-        logger.error(f"Unsupported factory producing {trainer_name}, supported factory: {list(FACTORY_REGISTRY.keys())}")
-        raise ValueError(f"Unsupported factory producing {trainer_name}, supported factory: {list(FACTORY_REGISTRY.keys())}")
+def resolve_factory(factory_name: str | None = None) -> IFactory:
+    if factory_name is None:
+        logger.info(f"Using default general factory")
+        return Factory()
     
-    logger.info(f"Using factory of {trainer_name}")
-    return FACTORY_REGISTRY[trainer_name]()
+    # TODO: if there are more factory down the line replace this
+    return Factory()
 
 
 def to_var(d: Any, device: torch.device) -> Any:

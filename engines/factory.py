@@ -6,9 +6,9 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from data_modules.dataset import STL10Dataset
 from engines.interfaces.irunner import IInferencer, ITester, ITrainer
-from engines.interfaces.ibuilder import ITrainerBuilder
+from engines.interfaces.ibuilder import ITrainerBuilder, ITesterBuilder
 from engines.interfaces.icommon import Criterion, Encoder, MaskSampler, Predictor, TorchModule
-from engines.spec import TrainerBuildSpec
+from engines.spec import TrainerBuildSpec, TesterBuildSpec
 from engines.trainer import TRAINER_BUILDER_REGISTRY, IJepaTrainer
 from models.convnext.model import ConvNext
 from models.common import JepaMaskSampler
@@ -121,7 +121,43 @@ class Factory:
         return trainer
         
     def build_tester(self, cfg: dict[str, Any]) -> ITester:
-        ...
+        tester_name = cfg["name"].lower()
+        if tester_name not in TESTER_BUILDER_REGISTRY:
+            logger.error(f"Unknown tester builder {tester_name}")
+            raise ValueError(f"Unknown tester builder {tester_name}")
+
+        tester_cls: ITesterBuilder = TESTER_BUILDER_REGISTRY[tester_name]
+
+        for c in tester_cls.required_components():
+            if c not in cfg:
+                logger.error(f"Tester builder {tester_name} requires component {c}")
+                raise ValueError(
+                    f"Tester builder {tester_name} requires component {c}"
+                )
+
+        spec = tester_cls.build_unique_kwargs(cfg)
+
+        component_kwargs: dict[str, Any] = {}
+        ctx_encoder = None
+        for c_spec in spec.component_specs:
+            comp = self._build_component(c_spec, cfg)
+
+            if c_spec.kind == "context":
+                ctx_encoder = comp
+            elif c_spec.kind == "target":
+                if ctx_encoder is not None:
+                    comp.load_state_dict(ctx_encoder.state_dict())
+
+            component_kwargs[c_spec.kwarg_name] = comp
+
+        tester = tester_cls(**spec.unique_kwargs, **component_kwargs)
+
+        if not isinstance(tester, ITester):
+            raise TypeError(f"Tester {tester_name} must implement ITester")
+
+        logger.info(f"Built tester {tester_name}")
+        return tester
+    
     def build_inferencer(self, cfg: dict[str, Any]) -> IInferencer:
         ...
     

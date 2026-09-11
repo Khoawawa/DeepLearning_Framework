@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from engines.interfaces.icommon import TorchModule
@@ -12,5 +12,10 @@ class OptimizerSpec:
 
 @dataclass
 class TrainerBuildSpec:
+    unique_kwargs: dict[str, Any]
+    optimizer_specs: list[OptimizerSpec]
+
+@dataclass
+class TesterBuildSpec:
     unique_kwargs: dict[str, Any]
     optimizer_specs: list[OptimizerSpec]

@@ -4,7 +4,7 @@ from typing import Any, Tuple
 
 import torch
 from torch.utils.data import DataLoader, Dataset
-from data_modules.dataset import STL10Dataset
+from data_modules.dataset import STL10Dataset, CIFAR10Dataset
 from engines.interfaces.irunner import IInferencer, ITester, ITrainer
 from engines.interfaces.ibuilder import ITrainerBuilder
 from engines.interfaces.icommon import Criterion, Encoder, MaskSampler, Predictor, TorchModule
@@ -30,8 +30,10 @@ ENCODER_REGISTRY: dict[str, type[Encoder]] = {
 }
 
 DATASET_REGISTRY: dict[str, type[Dataset]] = {
-    "stl10": STL10Dataset
+    "stl10": STL10Dataset,
+    "cifar10": CIFAR10Dataset
 }
+
 
 class Factory:
     

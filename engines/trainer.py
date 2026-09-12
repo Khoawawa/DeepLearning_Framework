@@ -81,14 +81,15 @@ class BaseTrainer(ABC):
         state: dict[str,  Any] = dict(self.base_state())
         state.update(self._component_state_dict())
         return state
-    @abstractmethod
     @classmethod
+    @abstractmethod
     def required_components(cls) -> list[str]:
         ...
-    @abstractmethod
     @classmethod
+    @abstractmethod
     def build_unique_kwargs(cls, cfg: dict[str, Any]) -> TrainerBuildSpec:
         ...
+
         
 
     @abstractmethod

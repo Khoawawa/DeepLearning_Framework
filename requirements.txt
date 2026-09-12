@@ -4,3 +4,4 @@ torchvision
 PyYAML
 tqdm
 typing_extensions
+timm

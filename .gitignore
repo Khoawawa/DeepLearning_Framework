@@ -6,3 +6,5 @@ data/
 !data/sample_data/
 configs/
 logs/
+
+system_rules.md

@@ -3,8 +3,6 @@ from abc import abstractmethod
 import torch
 from typing_extensions import Self
 
-from engines.interfaces.irunner import ITrainer
-
 @runtime_checkable
 class TorchModule(Protocol):
     training: bool

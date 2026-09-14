@@ -6,17 +6,19 @@ from loguru import logger
 import numpy as np
 import torch
 
-from engines.factory import Factory
 from engines.interfaces.ifactory import IFactory
 
 
 def resolve_factory(factory_name: str | None = None) -> IFactory:
+    from engines.factory import Factory
+
     if factory_name is None:
-        logger.info(f"Using default general factory")
+        logger.info("Using default general factory")
         return Factory()
-    
+
     # TODO: if there are more factory down the line replace this
     return Factory()
+
 
 
 def to_var(d: Any, device: torch.device) -> Any:

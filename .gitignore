@@ -2,9 +2,9 @@ docs/**
 .vscode/**
 __pycache__/
 # data
-data/
+/data/
 !data/sample_data/
-configs/
+# configs/
 logs/
 
 

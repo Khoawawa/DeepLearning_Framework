@@ -13,6 +13,7 @@ from loguru import logger
 from engines.interfaces.ibuilder import ITrainerBuilder
 from engines.interfaces.irunner import CallBack
 from engines.engine_utils import to_var
+from engines.registries import TRAINER_BUILDER_REGISTRY
 from utils import raise_and_log
 # from engines.engine_utils import log_trainer_implementation
 # from utils.common_utils import raise_and_log
@@ -146,6 +147,7 @@ class BaseTrainer(ABC):
         self._to_components(device)
         return self
 
+@TRAINER_BUILDER_REGISTRY.register("cnn")
 class CNNTrainer(BaseTrainer):
     
     def __init__(self, cnn_block: Encoder, optimizer: Optimizer) -> None:
@@ -179,19 +181,16 @@ class CNNTrainer(BaseTrainer):
         return kwargs
     
     def training_step(self, x: torch.Tensor) -> dict[str, float]:
-        ...
+        loss = self.cnn_block(x)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return {"loss": loss.item()}
     def _get_components(self) -> dict[str, TorchModule]:
         return {"cnn_block": self.cnn_block}
 
     def _get_optimizers(self) -> dict[str, Optimizer]:
         return {"optimizer": self.optimizer}
-
-    
-    
-TRAINER_BUILDER_REGISTRY: dict[str, type[ITrainerBuilder]] = {
-    # "ijepa": IJepaTrainer,
-    "cnn": CNNTrainer
-}
     
 if __name__ == "__main__":
     cfg = {

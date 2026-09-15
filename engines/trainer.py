@@ -7,7 +7,7 @@ from engines.interfaces.icommon import Encoder, Predictor, MaskSampler, Criterio
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from typing import Any, Tuple, Self
+from typing import Any, Tuple
 from loguru import logger
 
 from engines.interfaces.ibuilder import ITrainerBuilder
@@ -141,7 +141,7 @@ class BaseTrainer(ABC):
         for k, v in self._get_components().items():
             setattr(self, k, v.to(device))
             
-    def to(self, device: torch.device) -> Self:
+    def to(self, device: torch.device) -> "BaseTrainer":
         self.device = device
         self._to_components(device)
         return self

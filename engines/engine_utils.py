@@ -1,12 +1,14 @@
 
-from typing import Any
+import inspect
+from typing import TYPE_CHECKING, Any
 
 from torch.autograd import Variable
 from loguru import logger
 import numpy as np
 import torch
-
 from engines.interfaces.ifactory import IFactory
+if TYPE_CHECKING:
+    from engines.trainer import BaseTrainer
 
 
 def resolve_factory(factory_name: str | None = None) -> IFactory:
@@ -41,3 +43,13 @@ def to_var(d: Any, device: torch.device) -> Any:
     
     logger.error(f"to_var util doesnt support to operation of type: {type(d)}")
     raise ValueError(f"to_var util doesnt support to operation of type: {type(d)}")
+
+# def log_trainer_implementation(trainer: "BaseTrainer") -> None:
+#     """Log all public methods implemented by the trainer, skipping training-related ones."""
+#     cls = type(trainer)
+#     for name, member in inspect.getmembers(cls, predicate=inspect.isfunction):
+#         if name.startswith("_"):
+#             continue
+#         if "training" in name.lower():
+#             continue
+#         logger.info(f"{cls.__name__}.{name}{inspect.signature(member)}")

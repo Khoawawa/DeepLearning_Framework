@@ -5,7 +5,7 @@ from types import TracebackType
 from engines.callbacks import build_callbacks
 from engines.interfaces.ifactory import IFactory
 from engines.interfaces.irunner import ITrainer, CallBack
-from engines.utils import resolve_factory
+from engines.engine_utils import resolve_factory
 from utils.common_utils import load_config, resolve_config_path, resolve_output_path
 from utils.torch_utils import set_seed, resolve_device
 from loguru import logger

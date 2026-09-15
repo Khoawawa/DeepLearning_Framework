@@ -1,0 +1,7 @@
+loguru
+torch
+torchvision
+PyYAML
+tqdm
+typing_extensions
+timm

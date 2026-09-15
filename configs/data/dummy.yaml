@@ -1,0 +1,3 @@
+name: dummy
+num_samples: 10
+batch_size: 1

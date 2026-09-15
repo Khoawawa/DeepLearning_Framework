@@ -1,0 +1,27 @@
+name: convnext_base
+
+architecture:
+  encoder:
+    name: convnext
+    params:
+      depth: 12
+      dim: 768
+
+  predictor:
+    name: convnext
+    params:
+      depth: 6
+      dim: 384
+
+  mask_sampler:
+    num_targets: 4
+
+
+training:
+  optimizer:
+    name: adamw
+    lr: 1e-3
+    weight_decay: 0.05
+
+  criterion:
+    name: smooth_l1

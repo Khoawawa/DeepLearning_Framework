@@ -4,6 +4,8 @@ from typing import Any
 import yaml
 from loguru import logger
 
+from functools import wraps
+import inspect
 
 CONFIG_ROOT = Path(__file__).resolve().parent.parent / "configs"
 
@@ -75,3 +77,30 @@ def resolve_output_path(output_dir: str, run_name: str) -> Path:
 def raise_and_log(msg: str, exc_type: type[Exception] = ValueError) -> None:
     logger.error(msg)
     raise exc_type(msg)
+
+def initializer(func):
+    """
+    Automatically assigns the parameters.
+
+    >>> class process:
+    ...     @initializer
+    ...     def __init__(self, cmd, reachable=False, user='root'):
+    ...         pass
+    >>> p = process('halt', True)
+    >>> p.cmd, p.reachable, p.user
+    ('halt', True, 'root')
+    """
+    names, varargs, keywords, defaults = inspect.getargspec(func)
+
+    @wraps(func)
+    def wrapper(self, *args, **kargs):
+        for name, arg in list(zip(names[1:], args)) + list(kargs.items()):
+            setattr(self, name, arg)
+
+        for name, default in zip(reversed(names), reversed(defaults)):
+            if not hasattr(self, name):
+                setattr(self, name, default)
+
+        func(self, *args, **kargs)
+
+    return wrapper

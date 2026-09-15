@@ -1,6 +1,0 @@
-name: cifar10
-root: ./data
-image_size: 32
-batch_size: 64
-num_workers: 2
-download: true

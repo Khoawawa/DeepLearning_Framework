@@ -1,0 +1,7 @@
+name: stl10
+root: data/stl10
+split: unlabeled
+image_size: 96
+dowload: true
+batch_size: 64
+num_workers: 2

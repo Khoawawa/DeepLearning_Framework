@@ -1,0 +1,5 @@
+defaults:
+  data: cifar10
+  model: cnn
+
+epochs: 5

@@ -179,7 +179,11 @@ class CNNTrainer(BaseTrainer):
         return kwargs
     
     def training_step(self, x: torch.Tensor) -> dict[str, float]:
-        ...
+        loss = self.cnn_block(x)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return {"loss": loss.item()}
     def _get_components(self) -> dict[str, TorchModule]:
         return {"cnn_block": self.cnn_block}
 

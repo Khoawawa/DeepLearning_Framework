@@ -8,91 +8,47 @@ from data_modules.dataset import STL10Dataset, CIFAR10Dataset
 from engines.interfaces.irunner import IInferencer, ITester, ITrainer
 from engines.interfaces.ibuilder import ITrainerBuilder
 from engines.interfaces.icommon import Criterion, Encoder, MaskSampler, Predictor, TorchModule
+from engines.registries import DATASET_REGISTRY, TRAINER_BUILDER_REGISTRY
 from engines.spec import TrainerBuildSpec
-from engines.trainer import TRAINER_BUILDER_REGISTRY, IJepaTrainer
 from models.convnext.model import ConvNext
 from models.common import JepaMaskSampler
 from loguru import logger
 
-OPTIMIZER_REGISTRY: dict[str, type[torch.optim.Optimizer]] = {
-    "adam": torch.optim.Adam,
-    "adamw": torch.optim.AdamW
-}
+from utils.common_utils import raise_and_log
 
-CRITERION_REGISTRY: dict[str, type[torch.nn.Module]] = {
-    "smooth_l1": torch.nn.SmoothL1Loss,
-    "mse": torch.nn.MSELoss,
-    "l1": torch.nn.L1Loss,
-}
+# OPTIMIZER_REGISTRY: dict[str, type[torch.optim.Optimizer]] = {
+#     "adam": torch.optim.Adam,
+#     "adamw": torch.optim.AdamW
+# }
+
+# CRITERION_REGISTRY: dict[str, type[torch.nn.Module]] = {
+#     "smooth_l1": torch.nn.SmoothL1Loss,
+#     "mse": torch.nn.MSELoss,
+#     "l1": torch.nn.L1Loss,
+# }
 
 ENCODER_REGISTRY: dict[str, type[Encoder]] = {
     "convnext": ConvNext
 }
 
-DATASET_REGISTRY: dict[str, type[Dataset]] = {
-    "stl10": STL10Dataset,
-    "cifar10": CIFAR10Dataset
-}
 
 
 class Factory:
     
-    def build_optimizer(self, optimizer_cfg: dict[str, Any], module_list: list[TorchModule]) -> torch.optim.Optimizer:
-        optimizer_name = optimizer_cfg["name"].lower()
-        if optimizer_name not in OPTIMIZER_REGISTRY:
-            logger.error(f"Unknown optimizer {optimizer_name}")
-            raise ValueError(f"Unknown optimizer {optimizer_name}")
-        
-        optimizer_cls = OPTIMIZER_REGISTRY[optimizer_name]
-        params = [p for module in module_list for p in module.parameters()]
-        kwargs = {k: v for k, v in optimizer_cfg.items() if k != "name"}
-        try:
-            built_optimizer = optimizer_cls(params, **kwargs)
-            logger.info(f"Built optimizer {optimizer_name}")
-        except Exception as e:
-            logger.error(f"Failed to build optimizer '{optimizer_name}': {e}")
-            raise
-        return built_optimizer
-    
-    def build_criterion(self, criterion_cfg: dict[str, Any]) -> Criterion:
-        criterion_name = criterion_cfg["name"].lower()
-        if criterion_name not in CRITERION_REGISTRY:
-            logger.error(f"Unknown criterion {criterion_name}")
-            raise ValueError(f"Unknown criterion {criterion_name}")
-        
-        criterion_cls = CRITERION_REGISTRY[criterion_name]
-        kwargs = {k: v for k, v in criterion_cfg.items() if k != "name"}
-        try:
-            built_criterion = criterion_cls(**kwargs)
-            logger.info(f"Built criterion {criterion_name}")
-        except Exception as e:
-            logger.error(f"Failed to build criterion '{criterion_name}': {e}")
-            raise
-        
-        return built_criterion
-    
     def build_dataset(self, data_cfg: dict[str, Any]) -> Dataset:
+        if "name" not in data_cfg:
+            raise_and_log("Dataset must have a `name` field")
         dataset_name = data_cfg["name"].lower()
-        if dataset_name not in DATASET_REGISTRY:
-            logger.error(f"Unknown dataset {dataset_name}")
-            raise ValueError(f"Unknown dataset {dataset_name}")
-        
-        dataset_cls = DATASET_REGISTRY[dataset_name]
         kwargs = {k: v for k, v in data_cfg.items() if k != "name"}
-        try:
-            built_dataset = dataset_cls(**kwargs)
-            logger.info(f"Built dataset {dataset_name}")
-        except Exception as e:
-            logger.error(f"Failed to build dataset '{dataset_name}': {e}")
-            raise
-        logger.info(f"Built dataset '{dataset_name}'")
-        return built_dataset
+        dataset = DATASET_REGISTRY.build(dataset_name, **kwargs)
+        logger.debug(f"Built dataset '{dataset_name}'")
+        return dataset
         
     def build_dataloader(self, data_cfg: dict[str, Any], is_train: bool) -> DataLoader:
         dataloader = DataLoader(
             self.build_dataset(data_cfg),
             batch_size=data_cfg["batch_size"],
-            num_workers=data_cfg["num_workers"],
+            num_workers=data_cfg.get("num_workers", 1),
             shuffle = is_train
         )
         logger.info(f"Built dataloader with {len(dataloader)} batches")
@@ -100,25 +56,17 @@ class Factory:
     
     def build_trainer(self, cfg: dict[str, Any]) -> ITrainer:
         trainer_name = cfg["name"].lower()
-        if trainer_name not in TRAINER_BUILDER_REGISTRY:
-            logger.error(f"Unknown trainer builder {trainer_name}")
-            raise ValueError(f"Unknown trainer builder {trainer_name}")
+        trainer_cls: ITrainerBuilder = TRAINER_BUILDER_REGISTRY.get(trainer_name)
         
-        trainer_cls: ITrainerBuilder = TRAINER_BUILDER_REGISTRY[trainer_name]
-        for c in trainer_cls.required_components():
+        for c in trainer_cls.required_states():
             if c not in cfg:
-                logger.error(f"Trainer builder {trainer_name} requires component {c}")
-                raise ValueError(f"Trainer builder {trainer_name} requires component {c}")
+                raise_and_log(f"Trainer builder {trainer_name} requires component {c}")
         
-        builder_spec:TrainerBuildSpec = trainer_cls.build_unique_kwargs(cfg)
-        optimizer_kwargs = {
-            o_spec.kwarg_name: self.build_optimizer(cfg[o_spec.cfg_key], o_spec.modules)
-            for o_spec in builder_spec.optimizer_specs 
-        }
-        trainer = trainer_cls(**builder_spec.unique_kwargs, **optimizer_kwargs)
+        
+        trainer = trainer_cls(**trainer_cls.build_kwargs(cfg))
+    
         if not isinstance(trainer, ITrainer):
-            logger.error(f"Trainer {trainer_name} must implement ITrainer interface")
-            raise TypeError(f"Trainer {trainer_name} must implement ITrainer interface")
+            raise_and_log(f"Trainer {trainer_name} must implement ITrainer interface")
         
         return trainer
         

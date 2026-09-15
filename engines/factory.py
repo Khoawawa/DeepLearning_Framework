@@ -8,13 +8,11 @@ from data_modules.dataset import STL10Dataset, CIFAR10Dataset
 from engines.interfaces.irunner import IInferencer, ITester, ITrainer
 from engines.interfaces.ibuilder import ITrainerBuilder
 from engines.interfaces.icommon import Criterion, Encoder, MaskSampler, Predictor, TorchModule
-from engines.registries import DATASET_REGISTRY, TRAINER_BUILDER_REGISTRY
 from engines.spec import TrainerBuildSpec
+from engines.trainer import TRAINER_BUILDER_REGISTRY
 from models.convnext.model import ConvNext
 from models.common import JepaMaskSampler
 from loguru import logger
-
-from utils.common_utils import raise_and_log
 
 # OPTIMIZER_REGISTRY: dict[str, type[torch.optim.Optimizer]] = {
 #     "adam": torch.optim.Adam,
@@ -31,24 +29,36 @@ ENCODER_REGISTRY: dict[str, type[Encoder]] = {
     "convnext": ConvNext
 }
 
+DATASET_REGISTRY: dict[str, type[Dataset]] = {
+    "stl10": STL10Dataset,
+    "cifar10": CIFAR10Dataset
+}
 
 
 class Factory:
     
     def build_dataset(self, data_cfg: dict[str, Any]) -> Dataset:
-        if "name" not in data_cfg:
-            raise_and_log("Dataset must have a `name` field")
         dataset_name = data_cfg["name"].lower()
+        if dataset_name not in DATASET_REGISTRY:
+            logger.error(f"Unknown dataset {dataset_name}")
+            raise ValueError(f"Unknown dataset {dataset_name}")
+        
+        dataset_cls = DATASET_REGISTRY[dataset_name]
         kwargs = {k: v for k, v in data_cfg.items() if k != "name"}
-        dataset = DATASET_REGISTRY.build(dataset_name, **kwargs)
-        logger.debug(f"Built dataset '{dataset_name}'")
-        return dataset
+        try:
+            built_dataset = dataset_cls(**kwargs)
+            logger.info(f"Built dataset {dataset_name}")
+        except Exception as e:
+            logger.error(f"Failed to build dataset '{dataset_name}': {e}")
+            raise
+        logger.info(f"Built dataset '{dataset_name}'")
+        return built_dataset
         
     def build_dataloader(self, data_cfg: dict[str, Any], is_train: bool) -> DataLoader:
         dataloader = DataLoader(
             self.build_dataset(data_cfg),
             batch_size=data_cfg["batch_size"],
-            num_workers=data_cfg.get("num_workers", 1),
+            num_workers=data_cfg["num_workers"],
             shuffle = is_train
         )
         logger.info(f"Built dataloader with {len(dataloader)} batches")
@@ -56,17 +66,22 @@ class Factory:
     
     def build_trainer(self, cfg: dict[str, Any]) -> ITrainer:
         trainer_name = cfg["name"].lower()
-        trainer_cls: ITrainerBuilder = TRAINER_BUILDER_REGISTRY.get(trainer_name)
+        if trainer_name not in TRAINER_BUILDER_REGISTRY:
+            logger.error(f"Unknown trainer builder {trainer_name}")
+            raise ValueError(f"Unknown trainer builder {trainer_name}")
         
+        trainer_cls: ITrainerBuilder = TRAINER_BUILDER_REGISTRY[trainer_name]
         for c in trainer_cls.required_states():
             if c not in cfg:
-                raise_and_log(f"Trainer builder {trainer_name} requires component {c}")
+                logger.error(f"Trainer builder {trainer_name} requires component {c}")
+                raise ValueError(f"Trainer builder {trainer_name} requires component {c}")
         
         
         trainer = trainer_cls(**trainer_cls.build_kwargs(cfg))
     
         if not isinstance(trainer, ITrainer):
-            raise_and_log(f"Trainer {trainer_name} must implement ITrainer interface")
+            logger.error(f"Trainer {trainer_name} must implement ITrainer interface")
+            raise TypeError(f"Trainer {trainer_name} must implement ITrainer interface")
         
         return trainer
         

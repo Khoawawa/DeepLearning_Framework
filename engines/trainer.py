@@ -10,11 +10,10 @@ from tqdm import tqdm
 from typing import Any, Tuple
 from loguru import logger
 
-from engines.interfaces.ifactory import IFactory
 from engines.interfaces.ibuilder import ITrainerBuilder
 from engines.interfaces.irunner import CallBack
-from engines.spec import TrainerBuildSpec
 from engines.utils import to_var
+from utils.common_utils import raise_and_log
 
 
 
@@ -82,16 +81,25 @@ class BaseTrainer(ABC):
         state.update(self._component_state_dict())
         return state
     @classmethod
-    @abstractmethod
-    def required_components(cls) -> list[str]:
-        ...
+    def required_states(cls) -> list[str]:
+        return ["optimizer"] + cls._required_components()
+    
     @classmethod
     @abstractmethod
-    def build_unique_kwargs(cls, cfg: dict[str, Any]) -> TrainerBuildSpec:
+    def _required_components(cls) -> list[str]:
         ...
-
+    
+    @classmethod
+    @abstractmethod
+    def _build_unique_kwargs(cls, cfg: dict[str, Any]) -> dict[str, Any]:
+        ...
+    @classmethod
+    def build_kwargs(cls, cfg: dict[str, Any]) -> dict[str, Any]:
+        #TODO build the optimizer
+        kwargs: dict[str, Any] = ...
+        unique_kwargs = cls._build_unique_kwargs(cfg)
+        return {**kwargs, **unique_kwargs}
         
-
     @abstractmethod
     def _load_component_state_dict(self, state: dict[str, Any], strict: bool) -> None:
         ...
@@ -113,81 +121,99 @@ class BaseTrainer(ABC):
         self._to_components(device)
         return self
 
-class IJepaTrainer(BaseTrainer):
-    def __init__(self
-                 , context_encoder: Encoder
-                 , target_encoder: Encoder
-                 , predictor: Predictor
-                 , mask_sampler: MaskSampler
-                 , optimizer: Optimizer
-                 , criterion: Criterion
-                 ) -> None:
+class CNNTrainer(BaseTrainer):
+    def __init__(self, cnn_block: Encoder) -> None:
         super().__init__()
-        self.context_encoder = context_encoder
-        self.target_encoder = target_encoder
-        self.predictor = predictor
-        self.mask_sampler = mask_sampler
-        self.optimizer = optimizer
-        self.criterion = criterion
+        self.cnn = cnn_block
+    @classmethod
+    def _required_components(cls) -> list[str]:
+        return ["cnn"]
+    @classmethod
+    def _build_unique_kwargs(cls, cfg: dict[str, Any]) -> dict[str, Any]:
+        try:
+            cnn = nn.Conv2d(**cfg["cnn"])
+            return {"cnn": cnn}
+        except KeyError as e:
+            raise_and_log(f"Missing required cnn config key: {e}")
+        except TypeError as e:
+            raise_and_log(f"Invalid cnn config: {e}")
+    
+# class IJepaTrainer(BaseTrainer):
+#     def __init__(self
+#                  , context_encoder: Encoder
+#                  , target_encoder: Encoder
+#                  , predictor: Predictor
+#                  , mask_sampler: MaskSampler
+#                  , optimizer: Optimizer
+#                  , criterion: Criterion
+#                  ) -> None:
+#         super().__init__()
+#         self.context_encoder = context_encoder
+#         self.target_encoder = target_encoder
+#         self.predictor = predictor
+#         self.mask_sampler = mask_sampler
+#         self.optimizer = optimizer
+#         self.criterion = criterion
         
-        for p in target_encoder.parameters():
-            p.requires_grad = False
+#         for p in target_encoder.parameters():
+#             p.requires_grad = False
         
         
-    def training_step(self, x: torch.Tensor) -> dict[str, float]:
+#     def training_step(self, x: torch.Tensor) -> dict[str, float]:
         
-        ctx_idx, tgt_idx_list = self.mask_sampler.sample(x) 
+#         ctx_idx, tgt_idx_list = self.mask_sampler.sample(x) 
         
-        context_reprs = self.context_encoder(x, ctx_idx)
+#         context_reprs = self.context_encoder(x, ctx_idx)
         
-        with torch.no_grad():
-            full_target_reprs = self.target_encoder(x)
+#         with torch.no_grad():
+#             full_target_reprs = self.target_encoder(x)
             
-            target_reprs_list = [self._gather(full_target_reprs, tgt_idx) for tgt_idx in tgt_idx_list]
+#             target_reprs_list = [self._gather(full_target_reprs, tgt_idx) for tgt_idx in tgt_idx_list]
         
-        preds = [self.predictor(context_reprs, tgt_idx) for tgt_idx in tgt_idx_list]
+#         preds = [self.predictor(context_reprs, tgt_idx) for tgt_idx in tgt_idx_list]
         
-        losses = [self.criterion(pred, target_repr) for pred, target_repr in zip(preds, target_reprs_list)]
+#         losses = [self.criterion(pred, target_repr) for pred, target_repr in zip(preds, target_reprs_list)]
         
-        loss = torch.stack(losses).sum()
+#         loss = torch.stack(losses).sum()
         
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
+#         self.optimizer.zero_grad()
+#         loss.backward()
+#         self.optimizer.step()
         
-        return {
-            "loss": loss.item()
-            }
+#         return {
+#             "loss": loss.item()
+#             }
         
-    def _get_components(self) -> dict[str, TorchModule]:
-        return {
-            "context_encoder": self.context_encoder,
-            "target_encoder": self.target_encoder,
-            "predictor": self.predictor
-        }
+#     def _get_components(self) -> dict[str, TorchModule]:
+#         return {
+#             "context_encoder": self.context_encoder,
+#             "target_encoder": self.target_encoder,
+#             "predictor": self.predictor
+#         }
         
-    def _component_state_dict(self) -> dict[str, Any]:
-        state = {k: v.state_dict() for k, v in self._get_components().items()}
-        state["optimizer"] = self.optimizer.state_dict()
-        return state
+#     def _component_state_dict(self) -> dict[str, Any]:
+#         state = {k: v.state_dict() for k, v in self._get_components().items()}
+#         state["optimizer"] = self.optimizer.state_dict()
+#         return state
     
-    def _load_component_state_dict(self, state: dict[str, Any], strict: bool = True) -> None:
-        for k, v in self._get_components().items():
-            v.load_state_dict(state[k], strict=strict)
-        self.optimizer.load_state_dict(state["optimizer"])
+#     def _load_component_state_dict(self, state: dict[str, Any], strict: bool = True) -> None:
+#         for k, v in self._get_components().items():
+#             v.load_state_dict(state[k], strict=strict)
+#         self.optimizer.load_state_dict(state["optimizer"])
         
-    def _to_components(self, device: torch.device) -> None:
-        self.context_encoder = self.context_encoder.to(device)
-        self.target_encoder = self.target_encoder.to(device)
-        self.predictor = self.predictor.to(device)
+#     def _to_components(self, device: torch.device) -> None:
+#         self.context_encoder = self.context_encoder.to(device)
+#         self.target_encoder = self.target_encoder.to(device)
+#         self.predictor = self.predictor.to(device)
     
-    @staticmethod
-    def _gather(reprs: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
-        return torch.gather(reprs, dim=1, index=idx.unsqueeze(-1).expand(-1, -1, reprs.size(-1)))
+#     @staticmethod
+#     def _gather(reprs: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
+#         return torch.gather(reprs, dim=1, index=idx.unsqueeze(-1).expand(-1, -1, reprs.size(-1)))
         
     
     
 TRAINER_BUILDER_REGISTRY: dict[str, type[ITrainerBuilder]] = {
-    "ijepa": IJepaTrainer
+    # "ijepa": IJepaTrainer,
+    "cnn": CNNTrainer
 }
     

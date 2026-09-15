@@ -72,3 +72,6 @@ def resolve_output_path(output_dir: str, run_name: str) -> Path:
     
     return output_path
     
+def raise_and_log(msg: str, exc_type: type[Exception] = ValueError) -> None:
+    logger.error(msg)
+    raise exc_type(msg)

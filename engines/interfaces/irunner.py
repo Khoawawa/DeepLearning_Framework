@@ -1,5 +1,6 @@
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
+from typing import Any, Protocol, runtime_checkable
+from typing_extensions import Self
 import torch
 from torch.utils.data import DataLoader
 
@@ -14,7 +15,7 @@ class IRunner(Protocol):
     def load_state_dict(self, state: dict[str, Any], strict: bool = True) -> None:
         ...
 
-    def to(self, device: torch.device) -> Any:
+    def to(self: Self, device: torch.device) -> Self:
         ...
 
 
@@ -48,4 +49,4 @@ class IInferencer(IRunner, Protocol):
 @runtime_checkable
 class ITester(IRunner, Protocol):
     def test(self, data_loader: DataLoader) -> None:
-        ...
+        ...

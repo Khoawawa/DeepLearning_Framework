@@ -1,37 +1,54 @@
 import argparse
+import os
 from pathlib import Path
 import sys
 from types import TracebackType
 from engines.callbacks import build_callbacks
 from engines.interfaces.ifactory import IFactory
 from engines.interfaces.irunner import ITrainer, CallBack
-from engines.utils import resolve_factory
-from utils.common_utils import load_config, resolve_config_path, resolve_output_path
+from engines.engine_utils import resolve_factory
+from utils.common_utils import load_config, load_env, resolve_config_path, resolve_output_path
 from utils.torch_utils import set_seed, resolve_device
 from loguru import logger
+VALID_PROFILES = ("dev", "prod")
 
-def configure_logging(log_dir: str | Path = "logs") -> None:
+
+def resolve_profile() -> str:
+    profile = os.environ.get("PROFILE", "prod").strip().lower()
+    if profile not in VALID_PROFILES:
+        logger.warning(f"Unknown PROFILE '{profile}', defaulting to 'prod'")
+        return "prod"
+    return profile
+
+
+def configure_logging(log_dir: str | Path = "logs", profile: str | None = None) -> None:
     log_dir = Path(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
 
+    profile = profile if profile is not None else resolve_profile()
+    terminal_level = "DEBUG" if profile == "dev" else "INFO"
+
     logger.remove()  # drop the default stderr sink so we control formatting
 
-    # Terminal: short, no traceback noise
+    # Terminal: short, no traceback noise. Level depends on PROFILE.
     logger.add(
         sys.stderr,
-        level="INFO",
+        level=terminal_level,
         format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}",
         backtrace=False,
         diagnose=False,
     )
 
-    # File: full traceback + variable values, one file per run
+    # File: full traceback + variable values, one file per run — always DEBUG,
+    # regardless of profile, since the file sink is for postmortem debugging.
     logger.add(
         log_dir / "run_{time:YYYY-MM-DD_HH-mm-ss}.log",
         level="DEBUG",
         backtrace=True,
         diagnose=True,
     )
+
+    logger.info(f"Logging configured for profile '{profile}' (terminal level={terminal_level})")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Training script")
@@ -93,6 +110,7 @@ def run(args: argparse.Namespace) -> None:
         raise ValueError(f"Unknown mode {args.mode}")
 
 def main() -> int:
+    load_env()
     configure_logging()
     args = parse_args()
     try:

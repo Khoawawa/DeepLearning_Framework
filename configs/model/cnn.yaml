@@ -1,0 +1,11 @@
+name: cnn
+
+cnn_block:
+  in_channels: 3
+  out_channels: 32
+  kernel_size: 3
+
+optimizers:
+  optimizer:
+    type: AdamW
+    lr: 1.0e-3

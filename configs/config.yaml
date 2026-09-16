@@ -1,0 +1,15 @@
+defaults:
+  model: cnn
+  data: dummy
+  
+callbacks:
+  checkpoint:
+    save_every_steps: 1000
+    keep_every_epochs: 10
+    
+  logging: true
+
+# factory_name: 
+
+epochs: 50
+output_dir: runs/

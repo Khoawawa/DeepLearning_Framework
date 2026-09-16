@@ -6,7 +6,8 @@
 - [x] Currently the trainer and callback interface are blocking each other via cyclical referencing (see `icommon.py` and `itrainer.py`)
 - [x] Move data to the correct device after loading in `trainer.fit()` 
 - [ ] Build simple trainer for unit testing --> [KhoaNA]
-- [ ] Build simple dataset for unit testing --> [ThinhNHH]
+- [x] Build simple dataset for unit testing --> [ThinhNHH]
+
 #### Medium
 - [x] Refactor build trainer and factory
 - [ ] `DataLoader` batch type: `training_step(self, x: torch.Tensor, ...)` type hint may not hold if batches become dicts/tuples later.

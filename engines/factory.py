@@ -8,13 +8,8 @@ from data_modules.dataset import STL10Dataset, CIFAR10Dataset
 from engines.interfaces.irunner import IInferencer, ITester, ITrainer
 from engines.interfaces.ibuilder import ITrainerBuilder, ITesterBuilder
 from engines.interfaces.icommon import Criterion, Encoder, MaskSampler, Predictor, TorchModule
-<<<<<<< HEAD
-from engines.spec import TrainerBuildSpec, TesterBuildSpec
-from engines.trainer import TRAINER_BUILDER_REGISTRY, IJepaTrainer
-=======
-from engines.registries import DATASET_REGISTRY, TRAINER_BUILDER_REGISTRY
+from engines.registries import DATASET_REGISTRY, TRAINER_BUILDER_REGISTRY, TESTER_BUILDER_REGISTRY
 from engines.spec import TrainerBuildSpec
->>>>>>> 3cca3ccb79fd124c9cd65546840726f62ac81648
 from models.convnext.model import ConvNext
 from models.common import JepaMaskSampler
 from loguru import logger
@@ -78,34 +73,16 @@ class Factory:
     def build_tester(self, cfg: dict[str, Any]) -> ITester:
         tester_name = cfg["name"].lower()
         if tester_name not in TESTER_BUILDER_REGISTRY:
-            logger.error(f"Unknown tester builder {tester_name}")
             raise ValueError(f"Unknown tester builder {tester_name}")
 
-        tester_cls: ITesterBuilder = TESTER_BUILDER_REGISTRY[tester_name]
+        tester_cls = TESTER_BUILDER_REGISTRY[tester_name]
 
         for c in tester_cls.required_components():
             if c not in cfg:
-                logger.error(f"Tester builder {tester_name} requires component {c}")
-                raise ValueError(
-                    f"Tester builder {tester_name} requires component {c}"
-                )
+                raise ValueError(f"Tester builder {tester_name} requires config field '{c}'")
 
-        spec = tester_cls.build_unique_kwargs(cfg)
-
-        component_kwargs: dict[str, Any] = {}
-        ctx_encoder = None
-        for c_spec in spec.component_specs:
-            comp = self._build_component(c_spec, cfg)
-
-            if c_spec.kind == "context":
-                ctx_encoder = comp
-            elif c_spec.kind == "target":
-                if ctx_encoder is not None:
-                    comp.load_state_dict(ctx_encoder.state_dict())
-
-            component_kwargs[c_spec.kwarg_name] = comp
-
-        tester = tester_cls(**spec.unique_kwargs, **component_kwargs)
+        init_kwargs = tester_cls.build_kwargs(cfg)
+        tester = tester_cls(**init_kwargs)
 
         if not isinstance(tester, ITester):
             raise TypeError(f"Tester {tester_name} must implement ITester")

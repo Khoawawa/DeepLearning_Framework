@@ -37,6 +37,8 @@ class CallBack(Protocol):
 
     def on_training_end(self, runner: IRunner) -> None:
         ...
+    def on_test_end(self, runner: IRunner) -> None:
+        ...
 
 
 @runtime_checkable
@@ -48,4 +50,4 @@ class IInferencer(IRunner, Protocol):
 @runtime_checkable
 class ITester(IRunner, Protocol):
     def test(self, data_loader: DataLoader) -> None:
-        ...
+        ...

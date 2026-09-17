@@ -1,5 +1,6 @@
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
+from typing import Any, Protocol, runtime_checkable
+from typing_extensions import Self
 import torch
 from torch.utils.data import DataLoader
 
@@ -14,7 +15,7 @@ class IRunner(Protocol):
     def load_state_dict(self, state: dict[str, Any], strict: bool = True) -> None:
         ...
 
-    def to(self, device: torch.device) -> "IRunner":
+    def to(self: Self, device: torch.device) -> Self:
         ...
 
 
@@ -23,7 +24,7 @@ class ITrainer(IRunner, Protocol):
     def fit(self, data_loader: DataLoader, num_epochs: int, call_backs: list["CallBack"] | None = None, resume_path: str | Path | None = None) -> None:
         ...
 
-    def training_step(self, x: torch.Tensor) -> dict[str, float]:
+    def training_step(self, x: torch.Tensor | dict[str, Any]) -> dict[str, float]:
         ...
 
 

@@ -8,6 +8,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from typing import Any, Tuple
+from typing_extensions import Self
 from loguru import logger
 
 from engines.interfaces.ibuilder import ITrainerBuilder
@@ -93,7 +94,7 @@ class BaseTrainer(ABC):
                 cb.on_training_end(self)
                 
     @abstractmethod
-    def training_step(self, x: torch.Tensor) -> dict[str, float]:
+    def training_step(self, x: torch.Tensor | dict[str, Any]) -> dict[str, float]:
         ...
         
     # CHECKPOINTING #
@@ -142,7 +143,7 @@ class BaseTrainer(ABC):
         for k, v in self._get_components().items():
             setattr(self, k, v.to(device))
             
-    def to(self, device: torch.device) -> "BaseTrainer":
+    def to(self: Self, device: torch.device) -> Self:
         self.device = device
         self._to_components(device)
         return self
@@ -180,12 +181,17 @@ class CNNTrainer(BaseTrainer):
 
         return kwargs
     
-    def training_step(self, x: torch.Tensor) -> dict[str, float]:
-        loss = self.cnn_block(x)
+    def training_step(self, x: torch.Tensor | dict[str, Any]) -> dict[str, float]:
+        if isinstance(x, dict):
+            inp = x.get("image", x.get("x", next(iter(x.values()))))
+        else:
+            inp = x
+        out = self.cnn_block(inp)
+        loss = out.mean()
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        return {"loss": loss.item()}
+        return {"loss": float(loss.item())}
     def _get_components(self) -> dict[str, TorchModule]:
         return {"cnn_block": self.cnn_block}
 

@@ -24,7 +24,7 @@ class ITrainer(IRunner, Protocol):
     def fit(self, data_loader: DataLoader, num_epochs: int, call_backs: list["CallBack"] | None = None, resume_path: str | Path | None = None) -> None:
         ...
 
-    def training_step(self, x: torch.Tensor) -> dict[str, float]:
+    def training_step(self, x: torch.Tensor | dict[str, Any]) -> dict[str, float]:
         ...
 
 

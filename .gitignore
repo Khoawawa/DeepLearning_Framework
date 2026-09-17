@@ -1,12 +1,18 @@
 docs/**
-.vscode/**
+.vscode/
+.venv/
 __pycache__/
 # data
 /data/
 !data/sample_data/
-# configs/
 logs/
 
+# runs & checkpoints
+runs/
+configs/runs/
+*.pt
+*.pth
+*.pkl
 
 system_rules.md
 tests/

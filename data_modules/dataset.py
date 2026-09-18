@@ -52,7 +52,6 @@ class CIFAR10Dataset(Dataset):
     def __getitem__(self, idx: int) -> torch.Tensor:
         image, _label = self._dataset[idx]  # discard label — JEPA doesn't need it
         return image
-    
 @DATASET_REGISTRY.register("dummy")
 class DummyImageDataset(Dataset):
     """Synthetic in-memory dataset for quickly testing trainers/callbacks
@@ -65,21 +64,35 @@ class DummyImageDataset(Dataset):
         num_samples: int = 256,
         image_size: int = 32,
         num_channels: int = 3,
+        num_classes: int = 10,
+        label_shape: tuple[int, ...] | None = None,
         seed: int | None = 0,
         **kwargs: Any,
     ) -> None:
         self.num_samples = num_samples
         self.image_size = image_size
         self.num_channels = num_channels
+        self.num_classes = num_classes
+        self.label_shape = label_shape
 
         generator = torch.Generator().manual_seed(seed) if seed is not None else None
         self._images = torch.rand(
             num_samples, num_channels, image_size, image_size, generator=generator
         )
 
+        if label_shape is not None:
+            # feature-map-shaped target, for criteria like MSELoss that need
+            # input/target shapes to match (e.g. testing a bare conv block
+            # with no classification head)
+            self._labels = torch.rand(num_samples, *label_shape, generator=generator)
+        else:
+            # class-index target, for criteria like CrossEntropyLoss
+            self._labels = torch.randint(
+                0, num_classes, (num_samples,), generator=generator
+            )
+
     def __len__(self) -> int:
         return self.num_samples
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
-        return {"image": self._images[idx]}
-    
+        return {"image": self._images[idx], "label": self._labels[idx]}

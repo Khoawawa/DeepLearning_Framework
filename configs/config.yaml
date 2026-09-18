@@ -11,5 +11,5 @@ callbacks:
 
 # factory_name: 
 
-epochs: 50
+epochs: 
 output_dir: runs/

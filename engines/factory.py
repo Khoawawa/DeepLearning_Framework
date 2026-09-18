@@ -76,7 +76,7 @@ class Factory:
         if tester_name not in TESTER_BUILDER_REGISTRY:
             raise ValueError(f"Unknown tester builder {tester_name}")
 
-        tester_cls = TESTER_BUILDER_REGISTRY[tester_name]
+        tester_cls = TESTER_BUILDER_REGISTRY.[tester_name]
 
         for c in tester_cls.required_components():
             if c not in cfg:

@@ -14,8 +14,9 @@ from loguru import logger
 from engines.interfaces.ibuilder import ITrainerBuilder
 from engines.interfaces.irunner import CallBack
 from engines.engine_utils import to_var
-from engines.registries import TRAINER_BUILDER_REGISTRY
+from engines.registries import CRITERION_REGISTRY, TRAINER_BUILDER_REGISTRY
 from utils import raise_and_log
+from utils.common_utils import load_config, load_yaml
 # from engines.engine_utils import log_trainer_implementation
 # from utils.common_utils import raise_and_log
 
@@ -94,7 +95,7 @@ class BaseTrainer(ABC):
                 cb.on_training_end(self)
                 
     @abstractmethod
-    def training_step(self, x: torch.Tensor | dict[str, Any]) -> dict[str, float]:
+    def training_step(self, x: dict[str, Any]) -> dict[str, float]:
         ...
         
     # CHECKPOINTING #
@@ -151,10 +152,11 @@ class BaseTrainer(ABC):
 @TRAINER_BUILDER_REGISTRY.register("cnn")
 class CNNTrainer(BaseTrainer):
     
-    def __init__(self, cnn_block: Encoder, optimizer: Optimizer) -> None:
+    def __init__(self, cnn_block: Encoder, optimizer: Optimizer, criterion: Criterion) -> None:
         super().__init__()
         self.cnn_block = cnn_block
         self.optimizer = optimizer
+        self.criterion = criterion
         
     @classmethod
     def _required_components(cls) -> list[str]:
@@ -178,16 +180,28 @@ class CNNTrainer(BaseTrainer):
             raise_and_log(f"Missing required optimizer config key: {e}")
         except (TypeError, AttributeError) as e:
             raise_and_log(f"Invalid optimizer config: {e}")
+        
+        try:
+            crit_cfg = dict(cfg["criteria"]["main"])
+            crit_cls_name = crit_cfg.pop("type", "mse")
+            crit_cls = CRITERION_REGISTRY.get(crit_cls_name)
+            kwargs["criterion"] = crit_cls(**crit_cfg)
+        except KeyError as e:
+            raise_and_log(f"Missing required criterion config key: {e}")
+        except (TypeError, AttributeError) as e:
+            raise_and_log(f"Invalid criterion config: {e}")
 
         return kwargs
     
-    def training_step(self, x: torch.Tensor | dict[str, Any]) -> dict[str, float]:
-        if isinstance(x, dict):
-            inp = x.get("image", x.get("x", next(iter(x.values()))))
-        else:
-            inp = x
+    def training_step(self, x: dict[str, Any]) -> dict[str, float]:
+        
+        inp = x.get("image", x.get("x", next(iter(x.values()))))
+        label = x.get("label", x.get("y", None))
+        if not isinstance(label, torch.Tensor) or not isinstance(inp, torch.Tensor):
+            raise_and_log("Input and label must be torch tensors")
+            
         out = self.cnn_block(inp)
-        loss = out.mean()
+        loss = self.criterion(out, label)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -199,19 +213,7 @@ class CNNTrainer(BaseTrainer):
         return {"optimizer": self.optimizer}
     
 if __name__ == "__main__":
-    cfg = {
-        "cnn_block": {
-            "in_channels": 3,
-            "out_channels": 32,
-            "kernel_size": 3
-        },
-        "optimizers": {
-            "optimizer": {
-                "type": "Adam",
-                "lr": 1e-3,
-            }
-        },
-    }
+    cfg = load_yaml("configs/trainer/cnn.yaml")
     cnn_trainer = CNNTrainer(**CNNTrainer.build_kwargs(cfg))
     # log_trainer_implementation(cnn_trainer)
     

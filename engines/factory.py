@@ -36,9 +36,10 @@ ENCODER_REGISTRY: dict[str, type[Encoder]] = {
 class Factory:
     
     def build_dataset(self, data_cfg: dict[str, Any]) -> Dataset:
-        if "name" not in data_cfg:
-            raise_and_log("Dataset must have a `name` field")
-        dataset_name = data_cfg["name"].lower()
+        if "name" not in data_cfg and "type" not in data_cfg:
+            raise_and_log("Dataset must have a `name`/`type` field")
+            
+        dataset_name = data_cfg["name"].lower() if "name" in data_cfg else data_cfg["type"].lower()
         kwargs = {k: v for k, v in data_cfg.items() if k != "name"}
         dataset = DATASET_REGISTRY.build(dataset_name, **kwargs)
         logger.debug(f"Built dataset '{dataset_name}'")

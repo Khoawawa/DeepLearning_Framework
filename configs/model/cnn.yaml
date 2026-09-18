@@ -7,3 +7,6 @@ optimizers:
   optimizer:
     type: Adam
     lr: 0.001
+criteria:
+  main:
+    type: mse

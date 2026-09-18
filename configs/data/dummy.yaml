@@ -1,3 +1,6 @@
-name: dummy
+type: dummy
 num_samples: 10
 batch_size: 1
+image_size: 32
+num_channels: 3
+label_shape: [32, 30, 30]

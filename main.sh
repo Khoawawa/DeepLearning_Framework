@@ -2,7 +2,8 @@
 set -e
 
 BRANCH=${1:-main}
-CONFIG=${2:-configs/config.yaml}
+PROFILE=${2:-dev}
+CONFIG=${3:-configs/config.yaml}
 
 if [ ! -d DeepLearning_Framework ]; then
     git clone -b "$BRANCH" https://github.com/Khoawawa/DeepLearning_Framework.git
@@ -13,9 +14,7 @@ else
     git checkout "$BRANCH"
     git reset --hard origin/"$BRANCH"
 fi
-if [requirements.txt -nt .last_install ]; then
-    pip install -q -r requirements.txt
-    touch .last_install
-fi
 
-python main.py --config "$CONFIG"
+pip install -q -r requirements.txt
+
+PROFILE="$PROFILE" python main.py --config "$CONFIG"

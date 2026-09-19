@@ -1,13 +1,15 @@
+import csv
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
 import torch
-
-from engines.interfaces.irunner import CallBack, IRunner
 from loguru import logger
 
+from engines.interfaces.irunner import CallBack, IRunner
 from engines.registries import CALLBACK_REGISTRY
+
 
 class BaseCallBack(ABC):
     def __init__(self, output_path: str | Path) -> None:
@@ -22,6 +24,7 @@ class BaseCallBack(ABC):
     
     def on_training_end(self, runner: IRunner) -> None:
         ...
+
 
 @CALLBACK_REGISTRY.register("checkpoint")
 class CheckpointCallBack(BaseCallBack):
@@ -45,7 +48,6 @@ class CheckpointCallBack(BaseCallBack):
         if step > 0 and step % self.save_every_steps == 0:
             self._save(runner, self.LATEST_CHECKPOINT_NAME)
             
-    
     def on_epoch_end(self, runner: IRunner, epoch: int) -> None:
         self._save(runner, self.LATEST_CHECKPOINT_NAME)
         
@@ -54,6 +56,8 @@ class CheckpointCallBack(BaseCallBack):
     
     def on_training_end(self, runner: IRunner) -> None:
         self._save(runner, self.FINAL_CHECKPOINT_NAME)
+
+
 @CALLBACK_REGISTRY.register("logging")
 class LoggingCallBack(BaseCallBack):
     def __init__(self, output_path: str | Path, log_every_steps: int = 50) -> None:
@@ -85,8 +89,159 @@ class LoggingCallBack(BaseCallBack):
     def on_training_end(self, runner: IRunner) -> None:
         logger.info("Finished")
 
-        
-        
+
+@CALLBACK_REGISTRY.register("early_stopping")
+class EarlyStoppingCallBack(BaseCallBack):
+    def __init__(
+        self,
+        output_path: str | Path,
+        monitor: str = "loss",
+        patience: int = 5,
+        min_delta: float = 0.0,
+        mode: str = "min",
+        check_on: str = "epoch",
+    ) -> None:
+        super().__init__(output_path)
+        if mode not in ("min", "max"):
+            logger.error(f"Invalid mode '{mode}' for EarlyStoppingCallBack. Expected 'min' or 'max'.")
+            raise ValueError(f"Invalid mode '{mode}' for EarlyStoppingCallBack. Expected 'min' or 'max'.")
+        if check_on not in ("epoch", "step"):
+            logger.error(f"Invalid check_on '{check_on}' for EarlyStoppingCallBack. Expected 'epoch' or 'step'.")
+            raise ValueError(f"Invalid check_on '{check_on}' for EarlyStoppingCallBack. Expected 'epoch' or 'step'.")
+
+        self.monitor = monitor
+        self.patience = patience
+        self.min_delta = min_delta
+        self.mode = mode
+        self.check_on = check_on
+        self.wait_count: int = 0
+        self.best_score: float | None = None
+
+    def _evaluate(self, runner: IRunner, value: float) -> None:
+        if self.best_score is None:
+            self.best_score = value
+            return
+
+        is_improved = (
+            (value < self.best_score - self.min_delta)
+            if self.mode == "min"
+            else (value > self.best_score + self.min_delta)
+        )
+
+        if is_improved:
+            self.best_score = value
+            self.wait_count = 0
+        else:
+            self.wait_count += 1
+            if self.wait_count >= self.patience:
+                logger.info(
+                    f"Early stopping triggered: '{self.monitor}' did not improve for {self.wait_count} checks."
+                )
+                setattr(runner, "should_stop", True)
+
+    def on_step_end(self, runner: IRunner, metrics: dict[str, float], step: int) -> None:
+        if self.check_on == "step" and self.monitor in metrics:
+            self._evaluate(runner, metrics[self.monitor])
+
+    def on_epoch_end(self, runner: IRunner, epoch: int) -> None:
+        if self.check_on == "epoch":
+            # Check if metric was reported or accumulated
+            if hasattr(runner, "_epoch_metric_sums") and self.monitor in runner._epoch_metric_sums:
+                step_cnt = getattr(runner, "_epoch_step_count", 1)
+                avg_val = runner._epoch_metric_sums[self.monitor] / max(step_cnt, 1)
+                self._evaluate(runner, avg_val)
+
+
+@CALLBACK_REGISTRY.register("csv_logger")
+class CSVLoggerCallBack(BaseCallBack):
+    def __init__(self, output_path: str | Path, filename: str = "metrics.csv") -> None:
+        super().__init__(output_path)
+        self.csv_path = self.output_path / filename
+        self._header_written: bool = False
+
+    def on_step_end(self, runner: IRunner, metrics: dict[str, float], step: int) -> None:
+        if not metrics:
+            return
+
+        epoch = getattr(runner, "current_epoch", 0)
+        fieldnames = ["epoch", "step"] + list(metrics.keys())
+        file_exists = self.csv_path.exists()
+
+        try:
+            with open(self.csv_path, mode="a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                if not file_exists or not self._header_written:
+                    writer.writeheader()
+                    self._header_written = True
+                row = {"epoch": epoch, "step": step, **metrics}
+                writer.writerow(row)
+        except Exception as e:
+            logger.error(f"Failed to write to CSV log '{self.csv_path}': {e}")
+
+
+@CALLBACK_REGISTRY.register("lr_monitor")
+class LRMonitorCallBack(BaseCallBack):
+    def __init__(self, output_path: str | Path, log_every_steps: int = 50) -> None:
+        super().__init__(output_path)
+        self.log_every_steps = log_every_steps
+
+    def _get_learning_rates(self, runner: IRunner) -> dict[str, float]:
+        lrs: dict[str, float] = {}
+        opts: dict[str, Any] = {}
+        try:
+            if hasattr(runner, "_get_optimizers"):
+                opts = runner._get_optimizers()
+            elif hasattr(runner, "optimizer"):
+                opts = {"optimizer": getattr(runner, "optimizer")}
+        except AttributeError:
+            pass
+
+        for opt_name, opt in opts.items():
+            if hasattr(opt, "param_groups"):
+                for idx, group in enumerate(opt.param_groups):
+                    key = f"lr/{opt_name}_group_{idx}" if len(opt.param_groups) > 1 else f"lr/{opt_name}"
+                    lrs[key] = float(group.get("lr", 0.0))
+        return lrs
+
+    def on_step_end(self, runner: IRunner, metrics: dict[str, float], step: int) -> None:
+        if step % self.log_every_steps == 0:
+            lrs = self._get_learning_rates(runner)
+            if lrs:
+                lr_str = ", ".join(f"{k}={v:.6e}" for k, v in lrs.items())
+                logger.info(f"step={step} {lr_str}")
+
+    def on_epoch_end(self, runner: IRunner, epoch: int) -> None:
+        lrs = self._get_learning_rates(runner)
+        if lrs:
+            lr_str = ", ".join(f"{k}={v:.6e}" for k, v in lrs.items())
+            logger.info(f"Epoch {epoch} LR — {lr_str}")
+
+
+@CALLBACK_REGISTRY.register("timer")
+class TimerCallBack(BaseCallBack):
+    def __init__(self, output_path: str | Path, log_every_steps: int = 50) -> None:
+        super().__init__(output_path)
+        self.log_every_steps = log_every_steps
+        self._start_time: float = time.perf_counter()
+        self._step_start_time: float = time.perf_counter()
+        self._epoch_start_time: float = time.perf_counter()
+
+    def on_step_end(self, runner: IRunner, metrics: dict[str, float], step: int) -> None:
+        now = time.perf_counter()
+        step_duration = now - self._step_start_time
+        self._step_start_time = now
+
+        if step > 0 and step % self.log_every_steps == 0:
+            logger.info(f"step={step} step_time={step_duration:.4f}s")
+
+    def on_epoch_end(self, runner: IRunner, epoch: int) -> None:
+        now = time.perf_counter()
+        epoch_duration = now - self._epoch_start_time
+        total_duration = now - self._start_time
+        self._epoch_start_time = now
+
+        logger.info(f"Epoch {epoch} time={epoch_duration:.2f}s total_elapsed={total_duration:.2f}s")
+
 
 def build_callbacks(callback_configs: dict[str, dict[str, Any] | bool] | None, output_path: str | Path) -> list[CallBack]:
     callbacks: list[CallBack] = []
@@ -113,4 +268,4 @@ def build_callbacks(callback_configs: dict[str, dict[str, Any] | bool] | None, o
     else:
         logger.info(f"Built callbacks: {', '.join([type(cb).__name__ for cb in callbacks])}")
         
-    return callbacks
+    return callbacks

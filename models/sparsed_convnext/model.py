@@ -5,11 +5,11 @@ import torch
 import timm
 import torchvision
 from torchvision.ops import Conv2dNormActivation
-from models.convnext.components.ConvNextBlock import ConvNextBlock, ConvNextBlockConfig
+from models.sparsed_convnext.components.ConvNextBlock import ConvNextBlock, ConvNextBlockConfig
 from typing import Callable, Optional
 
 from functools import partial
-from models.convnext.components.LayerNorm import LayerNorm2D
+from models.sparsed_convnext.components.LayerNorm import LayerNorm2D
 
 @dataclass
 class ConvNextConfig:

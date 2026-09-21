@@ -10,7 +10,7 @@ from engines.interfaces.ibuilder import ITrainerBuilder
 from engines.interfaces.icommon import Criterion, Encoder, MaskSampler, Predictor, TorchModule
 from engines.registries import DATASET_REGISTRY, TRAINER_BUILDER_REGISTRY
 from engines.spec import TrainerBuildSpec
-from models.convnext.model import ConvNext
+from models.sparsed_convnext.model import ConvNext
 from models.common import JepaMaskSampler
 from loguru import logger
 

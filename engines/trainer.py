@@ -31,7 +31,7 @@ class BaseTrainer(ABC):
         self.device: torch.device = torch.device("cpu") # default on cpu, will be set to gpu on trainer.to(device)
     @classmethod
     def required_states(cls) -> list[str]:
-        return ["optimizers"] + cls._required_components()
+        return ["optimizers", "criteria"] + cls._required_components()
     
     @classmethod
     @abstractmethod
@@ -211,7 +211,53 @@ class CNNTrainer(BaseTrainer):
 
     def _get_optimizers(self) -> dict[str, Optimizer]:
         return {"optimizer": self.optimizer}
-    
+
+@TRAINER_BUILDER_REGISTRY.register("ijepa")
+class IJepaTrainer(BaseTrainer):
+    def __init__(self
+                 , context_encoder: Encoder
+                 , target_encoder: Encoder
+                 , predictor: Predictor
+                 , mask_sampler: MaskSampler
+                 , optimizer: Optimizer
+                 , criterion: Criterion
+                 ) -> None:
+        super().__init__()
+        self.context_encoder = context_encoder
+        self.target_encoder = target_encoder
+        self.predictor = predictor
+        self.mask_sampler = mask_sampler
+        self.optimizer = optimizer
+        self.criterion = criterion
+        
+        for p in target_encoder.parameters():
+            p.requires_grad = False
+    @classmethod
+    def _required_components(cls) -> list[str]:
+        return ["context_encoder", "target_encoder", "predictor", "mask_sampler"]
+    @classmethod
+    def _build_unique_kwargs(cls, cfg: dict[str, Any]) -> dict[str, Any]:
+        kwargs = {}
+        for k in IJepaTrainer.required_states():
+            try:
+                if k == "optimizers":
+                    opt_cfg = dict(cfg["optimizers"]["optimizer"])  # copy so we can pop
+                    opt_cls_name = opt_cfg.pop("type", "Adam")
+                    opt_cls = getattr(torch.optim, opt_cls_name)
+                    kwargs["optimizer"] = opt_cls(**opt_cfg)
+                elif k == "criteria":
+                    crit_cfg = dict(cfg["criteria"]["main"])
+                    crit_cls_name = crit_cfg.pop("type", "mse")
+                    crit_cls = CRITERION_REGISTRY.get(crit_cls_name)
+                    kwargs["criterion"] = crit_cls(**crit_cfg)
+                kwargs[k] = cfg[k]
+            except KeyError as e:
+                raise_and_log(f"Missing required {k} config key: {e}")
+            except TypeError as e:
+                raise_and_log(f"Invalid {k} config: {e}")
+        return kwargs
+            
+
 if __name__ == "__main__":
     cfg = load_yaml("configs/trainer/cnn.yaml")
     cnn_trainer = CNNTrainer(**CNNTrainer.build_kwargs(cfg))

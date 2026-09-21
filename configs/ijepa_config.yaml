@@ -1,0 +1,15 @@
+defaults:
+  model: convnext
+  data: dummy
+
+callbacks:
+  checkpoint:
+    save_every_steps: 1000
+    keep_every_epochs: 10
+
+  logging: true
+
+# factory_name:
+
+epochs: 3
+output_dir: runs/

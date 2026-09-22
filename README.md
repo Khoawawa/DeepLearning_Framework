@@ -10,7 +10,8 @@
 
 #### Medium
 - [x] Refactor build trainer and factory
-- [ ] `DataLoader` batch type: `training_step(self, x: torch.Tensor, ...)` type hint may not hold if batches become dicts/tuples later.
+- [x] `DataLoader` batch type: `training_step(self, x: torch.Tensor, ...)` type hint may not hold if batches become dicts/tuples later. --> [ThinhNHH]
+- [x] Add more CallBack classes (`EarlyStoppingCallBack`, `CSVLoggerCallBack`, `LRMonitorCallBack`, `TimerCallBack`) --> [ThinhNHH]
 #### Low
 - [ ] Build ITester --> [HyNX]
 - [ ] Build simple Tester implementing ITester for unit testing --> [HyNX]

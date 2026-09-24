@@ -27,6 +27,7 @@ class BaseTrainer(ABC):
     def __init__(self) -> None:
         self.current_epoch: int = 0
         self.global_step: int = 0
+        self.should_stop: bool = False
         self.allowed_checkpoint_format: list[str] = [".pth", ".pkl", ".pt"]
         self.device: torch.device = torch.device("cpu") # default on cpu, will be set to gpu on trainer.to(device)
     @classmethod
@@ -74,6 +75,7 @@ class BaseTrainer(ABC):
             self._load_from_checkpoint(resume_path)
         try:
             for epoch in range(self.current_epoch, num_epochs):
+                self.should_stop = False
                 for batch in tqdm(data_loader):
                     # the principle for batch is that it must be a dict so we can be flexible depend on what is expected of the input of the model
                     # this require the data loader to be a dict-based collate
@@ -82,10 +84,17 @@ class BaseTrainer(ABC):
                     for cb in call_backs:
                         cb.on_step_end(self, metrics, self.global_step)
                     self.global_step += 1
+                    if self.should_stop:
+                        logger.info(f"Early stopping requested at step {self.global_step}")
+                        break
                 self.current_epoch += 1
                 
                 for cb in call_backs:
                     cb.on_epoch_end(self, epoch)
+                
+                if self.should_stop:
+                    logger.info(f"Early stopping requested at epoch {self.current_epoch}")
+                    break
                     
         except Exception:
             logger.exception("Training failed at epoch={} step={}", self.current_epoch, self.global_step)

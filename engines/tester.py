@@ -22,8 +22,14 @@ from utils.common_utils import load_config, load_yaml
 
 class BaseTester(ABC):
     def __init__(self) -> None:
+        self.current_epoch: int = 0
+        self.global_step: int = 0
+        self.should_stop: bool = False
         self.device: torch.device = torch.device("cpu")
         self.allowed_checkpoint_format: list[str] = [".pth", ".pkl", ".pt"]
+        self._epoch_metric_sums: dict[str, float] = {}
+        self._epoch_step_count: int = 0
+        self.last_outputs: dict[str, Any] | None = None
 
     def state_dict(self) -> dict[str, Any]:
         return self._get_component_state_dict()
@@ -51,20 +57,42 @@ class BaseTester(ABC):
         aggregated_metrics: dict[str, float] = {}
         total_samples: int = 0
 
+        self.should_stop = False
+        self._epoch_metric_sums = {}
+        self._epoch_step_count = 0
+
         try:
             with torch.no_grad():
                 for step, batch in enumerate(tqdm(data_loader, desc="Testing")):
                     batch = to_var(batch, self.device)
                     metrics = self.test_step(batch)
-
                     batch_size = self._infer_batch_size(batch)
                     total_samples += batch_size
+
+                    # tích lũy giống LoggingCallBack/EarlyStopping làm với trainer
+                    for k, v in metrics.items():
+                        try:
+                            vf = float(v.item() if isinstance(v, torch.Tensor) else v)
+                            self._epoch_metric_sums[k] = self._epoch_metric_sums.get(k, 0.0) + vf
+                        except (TypeError, ValueError):
+                            pass
+                    self._epoch_step_count += 1
 
                     for k, v in metrics.items():
                         aggregated_metrics[k] = aggregated_metrics.get(k, 0.0) + (v * batch_size)
 
                     for cb in call_backs:
-                        cb.on_step_end(self, metrics, step)
+                        cb.on_step_end(self, metrics, self.global_step)
+
+                    self.global_step += 1
+                    if self.should_stop:
+                        logger.info(f"Early stopping requested at step {self.global_step}")
+                        break
+
+            self.current_epoch += 1
+
+            for cb in call_backs:
+                cb.on_epoch_end(self, self.current_epoch - 1)
 
         except Exception:
             logger.exception("Evaluation failed during testing run")
@@ -197,6 +225,11 @@ class CNNTester(BaseTester):
     def test_step(self, batch: Any) -> dict[str, float]:
         inp, label = self._unpack_batch(batch)
         out = self.cnn_block(inp)
+
+        self.last_outputs = {
+            "y_pred": out.detach().cpu().numpy(),
+            "y_true": label.detach().cpu().numpy() if isinstance(label, torch.Tensor) else None,
+        }
 
         if label is not None and isinstance(label, torch.Tensor):
             loss = self._compute_loss(out, label)

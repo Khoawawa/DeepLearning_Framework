@@ -12,7 +12,7 @@ from engines.spec import TesterBuildSpec
 from loguru import logger
 from engines.interfaces.icommon import TorchModule
 from engines.interfaces.irunner import CallBack
-from engines.registries import TESTER_BUILDER_REGISTRY, MODEL_REGISTRY, CRITERION_REGISTRY
+from engines.registries import TESTER_BUILDER_REGISTRY, CRITERION_REGISTRY
 from engines.engine_utils import to_var
 from utils import raise_and_log
 
@@ -71,7 +71,7 @@ class BaseTester(ABC):
             raise
         finally:
             for cb in call_backs:
-                cb.on_testing_end(self)
+                cb.on_training_end(self)
 
         if total_samples == 0:
             logger.warning("No samples were evaluated")

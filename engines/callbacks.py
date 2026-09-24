@@ -26,7 +26,6 @@ class BaseCallBack(ABC):
     def on_training_end(self, runner: IRunner) -> None:
         ...
 
-
 @CALLBACK_REGISTRY.register("checkpoint")
 class CheckpointCallBack(BaseCallBack):
     LATEST_CHECKPOINT_NAME = "latest.pt"
@@ -68,7 +67,6 @@ class CheckpointCallBack(BaseCallBack):
     
     def on_training_end(self, runner: IRunner) -> None:
         self._save(runner, self.FINAL_CHECKPOINT_NAME)
-
 
 @CALLBACK_REGISTRY.register("logging")
 class LoggingCallBack(BaseCallBack):

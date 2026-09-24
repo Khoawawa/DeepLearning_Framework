@@ -8,7 +8,7 @@ from data_modules.dataset import STL10Dataset, CIFAR10Dataset
 from engines.interfaces.irunner import IInferencer, ITester, ITrainer
 from engines.interfaces.ibuilder import ITrainerBuilder, ITesterBuilder
 from engines.interfaces.icommon import Criterion, Encoder, MaskSampler, Predictor, TorchModule
-from engines.registries import DATASET_REGISTRY, TRAINER_BUILDER_REGISTRY, TESTER_BUILDER_REGISTRY, MODEL_REGISTRY
+from engines.registries import DATASET_REGISTRY, TRAINER_BUILDER_REGISTRY, TESTER_BUILDER_REGISTRY
 from engines.spec import TrainerBuildSpec
 from models.convnext.model import ConvNext
 from models.common import JepaMaskSampler

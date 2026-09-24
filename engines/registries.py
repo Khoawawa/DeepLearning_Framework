@@ -18,3 +18,4 @@ CRITERION_REGISTRY.register("smooth_l1")(torch.nn.SmoothL1Loss)
 CRITERION_REGISTRY.register("mse")(torch.nn.MSELoss)
 CRITERION_REGISTRY.register("l1")(torch.nn.L1Loss)
 CRITERION_REGISTRY.register("cross_entropy")(torch.nn.CrossEntropyLoss)
+

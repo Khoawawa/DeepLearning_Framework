@@ -5,7 +5,7 @@ import sys
 from types import TracebackType
 from engines.callbacks import build_callbacks
 from engines.interfaces.ifactory import IFactory
-from engines.interfaces.irunner import ITrainer, CallBack
+from engines.interfaces.irunner import ITrainer, CallBack, ITester
 from engines.engine_utils import resolve_factory
 from utils.common_utils import load_config, load_env, resolve_config_path, resolve_output_path
 from utils.torch_utils import set_seed, resolve_device
@@ -100,8 +100,8 @@ def run(args: argparse.Namespace) -> None:
         
     elif args.mode == "test":
         dataloader = factory.build_dataloader(cfg["data"], is_train = False)
-        tester = factory.build_tester(cfg["model"]).to(device)
-        tester.test(dataloader)
+        tester:ITester = factory.build_tester(cfg["model"]).to(device)
+        tester.test(dataloader, args.resume_path, call_backs)
     elif args.mode == "inference":
         inferencer = factory.build_inferencer(cfg["model"]).to(device)
         # inferencer.infer()

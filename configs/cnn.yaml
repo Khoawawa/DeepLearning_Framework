@@ -1,5 +1,5 @@
 defaults:
-  data: cifar10
+  data: dummy
   model: cnn
 
 epochs: 5

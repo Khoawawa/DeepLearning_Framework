@@ -22,6 +22,8 @@ class BaseCallBack(ABC):
     
     def on_training_end(self, runner: IRunner) -> None:
         ...
+    def on_testing_end(self, runner: IRunner) -> None:
+        ...
 
 @CALLBACK_REGISTRY.register("checkpoint")
 class CheckpointCallBack(BaseCallBack):
@@ -54,6 +56,10 @@ class CheckpointCallBack(BaseCallBack):
     
     def on_training_end(self, runner: IRunner) -> None:
         self._save(runner, self.FINAL_CHECKPOINT_NAME)
+
+    def on_testing_end(self, runner: IRunner) -> None:
+        self._save(runner, self.FINAL_CHECKPOINT_NAME)
+
 @CALLBACK_REGISTRY.register("logging")
 class LoggingCallBack(BaseCallBack):
     def __init__(self, output_path: str | Path, log_every_steps: int = 50) -> None:
@@ -85,6 +91,8 @@ class LoggingCallBack(BaseCallBack):
     def on_training_end(self, runner: IRunner) -> None:
         logger.info("Finished")
 
+    def on_testing_end(self, runner: IRunner) -> None:
+        logger.info("Finished")
         
         
 

@@ -164,8 +164,3 @@ class Registry(Generic[T]):
 
     def names(self) -> list[str]:
         return sorted(self._registry)
-
-    def __getitem__(self, key: str):
-        if key not in self._registry:
-            raise KeyError(f"'{key}' is not registered.")
-        return self._registry[key]

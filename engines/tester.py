@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from typing import Any
+from typing import Any, Callable
 import torch
 import torch.nn as nn
 
@@ -12,8 +12,12 @@ from engines.spec import TesterBuildSpec
 from loguru import logger
 from engines.interfaces.icommon import TorchModule
 from engines.interfaces.irunner import CallBack
-from engines.registries import TESTER_BUILDER_REGISTRY, MODEL_REGISTRY
+from engines.registries import TESTER_BUILDER_REGISTRY, MODEL_REGISTRY, CRITERION_REGISTRY
 from engines.engine_utils import to_var
+from utils import raise_and_log
+
+from utils.common_utils import load_config, load_yaml
+
 
 
 class BaseTester(ABC):
@@ -60,14 +64,14 @@ class BaseTester(ABC):
                         aggregated_metrics[k] = aggregated_metrics.get(k, 0.0) + (v * batch_size)
 
                     for cb in call_backs:
-                        cb.on_step_end(metrics, step)
+                        cb.on_step_end(self, metrics, step)
 
         except Exception:
             logger.exception("Evaluation failed during testing run")
             raise
         finally:
             for cb in call_backs:
-                cb.on_test_end(self)
+                cb.on_testing_end(self)
 
         if total_samples == 0:
             logger.warning("No samples were evaluated")
@@ -111,8 +115,13 @@ class BaseTester(ABC):
 
     @classmethod
     @abstractmethod
-    def build_unique_kwargs(cls, cfg: dict[str, Any]) -> TesterBuildSpec:
+    def _build_unique_kwargs(cls, cfg: dict[str, Any]) -> dict[str, Any]:
         ...
+
+    @classmethod
+    def build_kwargs(cls, cfg: dict[str, Any]) -> dict[str, Any]:
+        unique = cls._build_unique_kwargs(cfg)
+        return {**unique}
 
     @abstractmethod
     def _to_components(self, device: torch.device) -> None:
@@ -123,57 +132,99 @@ class BaseTester(ABC):
         self._to_components(device)
         return self
 
-@TESTER_BUILDER_REGISTRY.register("simple")
-class SimpleTester(BaseTester):
-    def __init__(self, model: nn.Module, criterion: nn.Module | None = None):
+    @staticmethod
+    def _unpack_batch(batch: Any) -> tuple[Any, Any | None]:
+        """Tách batch thành (input, label). Hỗ trợ dict / tuple / list / tensor."""
+        if isinstance(batch, dict):
+            inp = batch.get("image", batch.get("x", next(iter(batch.values()))))
+            label = batch.get("label", batch.get("y", None))
+        elif isinstance(batch, (list, tuple)):
+            inp = batch[0]
+            label = batch[1] if len(batch) > 1 else None
+        else:
+            inp, label = batch, None
+
+        if not isinstance(inp, torch.Tensor):
+            raise ValueError("Input must be a torch.Tensor")
+        return inp, label
+
+    def _compute_loss(
+        self,
+        out: torch.Tensor,
+        label: torch.Tensor,
+        criterion: nn.Module | Callable | None = None,
+    ) -> torch.Tensor:
+        """Tính loss. Trả về tensor scalar (chưa detach)."""
+        criterion = criterion or getattr(self, "criterion", None)
+        if criterion is None:
+            raise ValueError("No criterion available")
+        return criterion(out, label)
+
+@TESTER_BUILDER_REGISTRY.register("cnn")
+class CNNTester(BaseTester):
+    def __init__(self, cnn_block: Encoder, criterion: Criterion | None = None):
         super().__init__()
-        self.model = model
+        self.cnn_block = cnn_block
         self.criterion = criterion or nn.MSELoss()
 
     @classmethod
     def required_components(cls) -> list[str]:
-        return ["model"]
+        return ["cnn_block"]
 
     @classmethod
-    def build_unique_kwargs(cls, cfg: dict[str, Any]) -> TesterBuildSpec:
-        model_cfg = cfg["model"]
-        model_name = model_cfg["name"].lower()
-        model = MODEL_REGISTRY.build(model_name, **model_cfg.get("params", {}))
+    def _build_unique_kwargs(cls, cfg: dict[str, Any]) -> dict[str, Any]:
+        kwargs = {}
+        try:
+            kwargs["cnn_block"] = nn.Conv2d(**cfg["cnn_block"])
+        except KeyError as e:
+            raise_and_log(f"Missing required cnn config key: {e}")
+        except TypeError as e:
+            raise_and_log(f"Invalid cnn config: {e}")
 
-        return {
-            "model": model,
-        }
+        if "criteria" in cfg and "main" in cfg["criteria"]:
+            try:
+                crit_cfg = dict(cfg["criteria"]["main"])
+                crit_cls_name = crit_cfg.pop("type", "mse")
+                crit_cls = CRITERION_REGISTRY.get(crit_cls_name)
+                kwargs["criterion"] = crit_cls(**crit_cfg)
+            except KeyError as e:
+                raise_and_log(f"Missing required criterion config key: {e}")
+            except (TypeError, AttributeError) as e:
+                raise_and_log(f"Invalid criterion config: {e}")
+
+        return kwargs
+
     def test_step(self, batch: Any) -> dict[str, float]:
-        x, y = batch
-        preds = self.model(x)
-        loss = self.criterion(preds, y)
-        return {"loss": loss.item()}
+        inp, label = self._unpack_batch(batch)
+        out = self.cnn_block(inp)
+
+        if label is not None and isinstance(label, torch.Tensor):
+            loss = self._compute_loss(out, label)
+            return {"loss": float(loss.item())}
+
+        return {"output_mean": float(out.mean().item())}
 
     def _eval_mode(self) -> None:
-        self.model.eval()
+        self.cnn_block.eval()
 
     def _get_component_state_dict(self) -> dict[str, Any]:
-        return {"model": self.model.state_dict()}
+        return {"cnn_block": self.cnn_block.state_dict()}
 
     def _load_component_state_dict(self, state: dict[str, Any]) -> None:
-        model_state = state.get("model", state)
-        self.model.load_state_dict(model_state)
+        cnn_block_state = state.get("cnn_block", state)
+        self.cnn_block.load_state_dict(cnn_block_state)
 
     def _to_components(self, device: torch.device) -> None:
-        self.model.to(device)
+        self.cnn_block.to(device)
 
-if __name__ == "__main__":
-    model = nn.Linear(4, 1)
-    tester = SimpleTester(model=model)
-    
-    x = torch.randn(10, 4)
-    y = torch.randn(10, 1)
-    loader = DataLoader(TensorDataset(x, y), batch_size=2)
-    
-    metrics = tester.test(loader)
 
-    print(metrics)
+# if __name__ == "__main__":
+#     cfg = load_yaml("configs/config.yaml")
+#     cnn_tester = CNNTester(**CNNTester.build_kwargs(cfg))
 
-    assert "loss" in metrics
-    assert isinstance(metrics["loss"], float)
-    assert not model.training 
+#     x = torch.randn(4, 3, 32, 32)
+#     y = torch.randn(4, 32, 30, 30)
+#     loader = DataLoader(TensorDataset(x, y), batch_size=2)
+#     print(cnn_tester.test(loader))
+
+

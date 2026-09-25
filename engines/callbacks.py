@@ -10,6 +10,10 @@ from loguru import logger
 
 from engines.interfaces.irunner import CallBack, IRunner
 from engines.registries import CALLBACK_REGISTRY
+from collections import defaultdict
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 class BaseCallBack(ABC):
@@ -25,7 +29,6 @@ class BaseCallBack(ABC):
     
     def on_training_end(self, runner: IRunner) -> None:
         ...
-
 
 @CALLBACK_REGISTRY.register("checkpoint")
 class CheckpointCallBack(BaseCallBack):
@@ -68,7 +71,6 @@ class CheckpointCallBack(BaseCallBack):
     
     def on_training_end(self, runner: IRunner) -> None:
         self._save(runner, self.FINAL_CHECKPOINT_NAME)
-
 
 @CALLBACK_REGISTRY.register("logging")
 class LoggingCallBack(BaseCallBack):
@@ -356,4 +358,90 @@ def build_callbacks(callback_configs: dict[str, dict[str, Any] | bool | None] | 
         logger.info(f"Built callbacks: {', '.join([type(cb).__name__ for cb in callbacks])}")
         
     return callbacks
-
+
+@CALLBACK_REGISTRY.register("plot")
+class PlotCallBack(BaseCallBack):
+    def __init__(
+        self,
+        output_path: str | Path,
+        plot_every_epochs: int = 5,
+        metrics_to_plot: list[str] | None = None,
+        dpi: int = 120,
+    ) -> None:
+        super().__init__(output_path)
+        self.plot_every_epochs = plot_every_epochs
+        self.metrics_to_plot = metrics_to_plot
+        self.dpi = dpi
+
+        self._history: dict[str, list[float]] = defaultdict(list)
+        self._steps: list[int] = []
+        self._step_metrics: dict[str, list[float]] = defaultdict(list)
+
+        self._test_step_metrics: dict[str, list[float]] = defaultdict(list)
+        self._y_true: list[np.ndarray] = []
+        self._y_pred: list[np.ndarray] = []
+
+    def on_step_end(self, runner, metrics, step):
+        for k, v in metrics.items():
+            try:
+                self._step_metrics[k].append(float(v))
+            except (TypeError, ValueError):
+                pass
+        if metrics:
+            self._steps.append(step)
+
+        last = getattr(runner, "last_outputs", None)
+        if last is not None:
+            if last.get("y_pred") is not None:
+                self._y_pred.append(np.asarray(last["y_pred"]))
+            if last.get("y_true") is not None:
+                self._y_true.append(np.asarray(last["y_true"]))
+
+    def on_epoch_end(self, runner, epoch):
+        for k, vals in self._step_metrics.items():
+            if vals:
+                self._history[k].append(float(np.mean(vals)))
+        self._step_metrics.clear()
+
+        if epoch % self.plot_every_epochs == 0 or epoch == 0:
+            self._plot_curves(epoch)
+
+    def on_training_end(self, runner):
+        self._plot_curves(runner.current_epoch, final=True)
+        self._plot_scatter()
+
+    def _plot_curves(self, epoch: int, final: bool = False):
+        if not self._history:
+            return
+        metrics = self.metrics_to_plot or list(self._history.keys())
+        fig, ax = plt.subplots(figsize=(7, 4))
+        for k in metrics:
+            if k in self._history and self._history[k]:
+                ax.plot(range(1, len(self._history[k]) + 1),
+                        self._history[k], label=k, marker="o", markersize=3)
+        ax.set_xlabel("epoch"); ax.set_ylabel("value"); ax.legend()
+        ax.set_title("Training curves")
+        ax.grid(alpha=0.3)
+        fig.tight_layout()
+        suffix = "final" if final else f"epoch{epoch}"
+        fig.savefig(self.output_path / f"train_curves_{suffix}.png", dpi=self.dpi)
+        plt.close(fig)
+
+    def _plot_scatter(self):
+        if not self._y_true or not self._y_pred:
+            return
+        yt = np.concatenate(self._y_true, axis=0).reshape(-1)
+        yp = np.concatenate(self._y_pred, axis=0).reshape(-1)
+        if yt.shape != yp.shape:
+            logger.warning(f"shape mismatch y_true={yt.shape} y_pred={yp.shape}, skip scatter")
+            return
+        fig, ax = plt.subplots(figsize=(5, 5))
+        ax.scatter(yt, yp, s=4, alpha=0.5)
+        lim = [min(yt.min(), yp.min()), max(yt.max(), yp.max())]
+        ax.plot(lim, lim, "r--", linewidth=1)
+        ax.set_xlabel("y_true"); ax.set_ylabel("y_pred")
+        ax.set_title("y_true vs y_pred"); ax.grid(alpha=0.3)
+        fig.tight_layout()
+        fig.savefig(self.output_path / "test_scatter.png", dpi=self.dpi)
+        plt.close(fig)
+        logger.info(f"Saved scatter to {self.output_path / 'test_scatter.png'}")

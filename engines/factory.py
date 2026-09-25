@@ -6,9 +6,9 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from data_modules.dataset import STL10Dataset, CIFAR10Dataset
 from engines.interfaces.irunner import IInferencer, ITester, ITrainer
-from engines.interfaces.ibuilder import ITrainerBuilder
+from engines.interfaces.ibuilder import ITrainerBuilder, ITesterBuilder
 from engines.interfaces.icommon import Criterion, Encoder, MaskSampler, Predictor, TorchModule
-from engines.registries import DATASET_REGISTRY, TRAINER_BUILDER_REGISTRY
+from engines.registries import DATASET_REGISTRY, TRAINER_BUILDER_REGISTRY, TESTER_BUILDER_REGISTRY
 from engines.spec import TrainerBuildSpec
 from models.convnext.model import ConvNext
 from models.common import JepaMaskSampler
@@ -30,7 +30,6 @@ from utils.common_utils import raise_and_log
 ENCODER_REGISTRY: dict[str, type[Encoder]] = {
     "convnext": ConvNext
 }
-
 
 
 class Factory:
@@ -72,7 +71,22 @@ class Factory:
         return trainer
         
     def build_tester(self, cfg: dict[str, Any]) -> ITester:
-        ...
+        tester_name = cfg["name"].lower()
+        tester_cls: ITesterBuilder = TESTER_BUILDER_REGISTRY.get(tester_name)
+
+        for c in tester_cls.required_components():
+            if c not in cfg:
+                raise ValueError(f"Tester builder {tester_name} requires config field '{c}'")
+
+        init_kwargs = tester_cls.build_kwargs(cfg)
+        tester = tester_cls(**init_kwargs)
+
+        if not isinstance(tester, ITester):
+            raise TypeError(f"Tester {tester_name} must implement ITester")
+
+        logger.info(f"Built tester {tester_name}")
+        return tester
+    
     def build_inferencer(self, cfg: dict[str, Any]) -> IInferencer:
         ...
     

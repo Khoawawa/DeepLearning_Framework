@@ -8,6 +8,10 @@ callbacks:
     keep_every_epochs: 10
 
   logging: true
+  plot:
+    plot_every_epochs: 5
+    metrics_to_plot: ["loss"]
+    output_path: "runs/exp1"
 
 # factory_name:
 

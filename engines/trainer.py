@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -17,10 +19,6 @@ from engines.engine_utils import to_var
 from engines.registries import CRITERION_REGISTRY, TRAINER_BUILDER_REGISTRY
 from utils import raise_and_log
 from utils.common_utils import load_config, load_yaml
-# from engines.engine_utils import log_trainer_implementation
-# from utils.common_utils import raise_and_log
-
-
 
 class BaseTrainer(ABC):
     # CONSTRUCTION #
@@ -116,7 +114,8 @@ class BaseTrainer(ABC):
             raise ValueError(f"Unsupported checkpoint file type {file_type}")
         
         logger.info(f"Loading checkpoint from {checkpoint_path}")
-        state = torch.load(checkpoint_path)
+        state = torch.load(checkpoint_path, weights_only=False)
+        self.load_state_dict(state)
         self.load_state_dict(state)
         
     def base_state(self) -> dict[str, Any]:
@@ -220,6 +219,145 @@ class CNNTrainer(BaseTrainer):
 
     def _get_optimizers(self) -> dict[str, Optimizer]:
         return {"optimizer": self.optimizer}
+
+
+class ModalityTrainer(BaseTrainer):
+    """Base trainer for modality models (ViT, Text, Audio, Multimodal, Standard)."""
+
+    def __init__(self, model: nn.Module, optimizer: Optimizer, criterion: Criterion) -> None:
+        super().__init__()
+        self.model = model
+        self.optimizer = optimizer
+        self.criterion = criterion
+
+    @classmethod
+    def _required_components(cls) -> list[str]:
+        return []
+
+    @classmethod
+    def _build_unique_kwargs(cls, cfg: dict[str, Any]) -> dict[str, Any]:
+        kwargs = {}
+        if "model_instance" in cfg:
+            kwargs["model"] = cfg["model_instance"]
+        elif "model_class" in cfg:
+            model_cls = cfg["model_class"]
+            model_kwargs = cfg.get("model_params", {})
+            kwargs["model"] = model_cls(**model_kwargs)
+        elif "model" in cfg and isinstance(cfg["model"], dict):
+            from models.transformer.model import TransformerModel
+            kwargs["model"] = TransformerModel(**cfg["model"])
+        elif "model" in cfg and isinstance(cfg["model"], nn.Module):
+            kwargs["model"] = cfg["model"]
+        else:
+            raise_and_log("Config must specify 'model_instance', 'model_class', or 'model'")
+
+        try:
+            opt_cfg = dict(cfg.get("optimizers", {}).get("optimizer", {"type": "Adam", "lr": 0.001}))
+            opt_cls_name = opt_cfg.pop("type", "Adam")
+            opt_cls = getattr(torch.optim, opt_cls_name)
+            kwargs["optimizer"] = opt_cls(kwargs["model"].parameters(), **opt_cfg)
+        except Exception as e:
+            raise_and_log(f"Invalid optimizer config: {e}")
+
+        try:
+            crit_cfg = dict(cfg.get("criteria", {}).get("main", {"type": "cross_entropy"}))
+            crit_cls_name = crit_cfg.pop("type", "cross_entropy")
+            crit_cls = CRITERION_REGISTRY.get(crit_cls_name)
+            kwargs["criterion"] = crit_cls(**crit_cfg)
+        except Exception as e:
+            raise_and_log(f"Invalid criterion config: {e}")
+
+        return kwargs
+
+    def _get_components(self) -> dict[str, TorchModule]:
+        return {"model": self.model}
+
+    def _get_optimizers(self) -> dict[str, Optimizer]:
+        return {"optimizer": self.optimizer}
+
+
+@TRAINER_BUILDER_REGISTRY.register("vit")
+class ViTTrainer(ModalityTrainer):
+    """Trainer for Vision Transformer models."""
+
+    def training_step(self, x: dict[str, Any]) -> dict[str, float]:
+        inp = x.get("image", x.get("x", next(iter(x.values())) if isinstance(x, dict) else x))
+        label = x.get("label", x.get("y", None)) if isinstance(x, dict) else None
+        if not isinstance(inp, torch.Tensor) or not isinstance(label, torch.Tensor):
+            raise_and_log("Input and label must be torch tensors")
+
+        out = self.model(inp)
+        loss = self.criterion(out, label)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return {"loss": float(loss.item())}
+
+
+@TRAINER_BUILDER_REGISTRY.register("text")
+class TextTrainer(ModalityTrainer):
+    """Trainer for Text Transformer models."""
+
+    def training_step(self, x: dict[str, Any]) -> dict[str, float]:
+        inp = x.get("text", x.get("x", next(iter(x.values())) if isinstance(x, dict) else x))
+        label = x.get("label", x.get("y", None)) if isinstance(x, dict) else None
+        if not isinstance(inp, torch.Tensor) or not isinstance(label, torch.Tensor):
+            raise_and_log("Input and label must be torch tensors")
+
+        out = self.model(inp)
+        loss = self.criterion(out, label)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return {"loss": float(loss.item())}
+
+
+@TRAINER_BUILDER_REGISTRY.register("audio")
+class AudioTrainer(ModalityTrainer):
+    """Trainer for Audio Transformer models."""
+
+    def training_step(self, x: dict[str, Any]) -> dict[str, float]:
+        inp = x.get("audio", x.get("x", next(iter(x.values())) if isinstance(x, dict) else x))
+        label = x.get("label", x.get("y", None)) if isinstance(x, dict) else None
+        if not isinstance(inp, torch.Tensor) or not isinstance(label, torch.Tensor):
+            raise_and_log("Input and label must be torch tensors")
+
+        out = self.model(inp)
+        loss = self.criterion(out, label)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return {"loss": float(loss.item())}
+
+
+@TRAINER_BUILDER_REGISTRY.register("multimodal")
+class MultimodalTrainer(ModalityTrainer):
+    """Multimodal trainer taking dictionary batches containing multiple modalities (image, text, audio)."""
+
+    def training_step(self, x: dict[str, Any]) -> dict[str, float]:
+        if not isinstance(x, dict):
+            raise_and_log("Input batch for MultimodalTrainer must be a dict")
+        label = x.get("label", x.get("y", None))
+        if not isinstance(label, torch.Tensor):
+            raise_and_log("Label must be a torch tensor")
+
+        out = self.model(x)
+        loss = self.criterion(out, label)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        return {"loss": float(loss.item())}
+
+
+@TRAINER_BUILDER_REGISTRY.register("standard")
+class StandardTrainer(ViTTrainer):
+    """General single-modality trainer fallback."""
+    pass
+
     
 if __name__ == "__main__":
     cfg = load_yaml("configs/trainer/cnn.yaml")

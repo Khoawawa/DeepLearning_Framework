@@ -1,21 +1,20 @@
 import torch
-from typing import Tuple
 
 
 class JepaMaskSampler:
     def __init__(
         self,
         num_targets: int = 4,
-        target_scale: Tuple[float, float] = (0.15, 0.2),
-        context_scale: Tuple[float, float] = (0.85, 1.0),
-        aspect_ratio: Tuple[float, float] = (0.75, 1.5),
+        target_scale: tuple[float, float] = (0.15, 0.2),
+        context_scale: tuple[float, float] = (0.85, 1.0),
+        aspect_ratio: tuple[float, float] = (0.75, 1.5),
     ) -> None:
         self.num_targets = num_targets
         self.target_scale = target_scale
         self.context_scale = context_scale
         self.aspect_ratio = aspect_ratio
 
-    def sample(self, x: torch.Tensor) -> Tuple[torch.Tensor, list[torch.Tensor]]:
+    def sample(self, x: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
         batch_size, num_patches, _ = x.shape  # assumes x is already patchified: (B, N, D)
         device = x.device
 
@@ -35,7 +34,7 @@ class JepaMaskSampler:
         self,
         batch_size: int,
         num_patches: int,
-        scale_range: Tuple[float, float],
+        scale_range: tuple[float, float],
         device: torch.device,
     ) -> torch.Tensor:
         scale = torch.empty(1).uniform_(*scale_range).item()
@@ -57,27 +56,19 @@ class JepaMaskSampler:
         scale = torch.empty(1).uniform_(*self.context_scale).item()
         context_size = max(1, int(num_patches * scale))
 
-        # mask out target-covered patches per sample, then sample from the remainder
+        availables: list[torch.Tensor] = []
+        all_idx = torch.arange(num_patches, device=device)
+        for b in range(batch_size):
+            covered = torch.cat([t[b] for t in target_idx_list])
+            mask = torch.ones(num_patches, dtype=torch.bool, device=device)
+            mask[covered] = False
+            availables.append(all_idx[mask])
+
+        min_avail = min(avail.numel() for avail in availables)
+        n = min(context_size, min_avail)
+
         context_idx = torch.stack([
-            self._context_for_sample(b, num_patches, target_idx_list, context_size, device)
-            for b in range(batch_size)
+            avail[torch.randperm(avail.numel(), device=device)[:n]]
+            for avail in availables
         ])
         return context_idx
-
-    def _context_for_sample(
-        self,
-        b: int,
-        num_patches: int,
-        target_idx_list: list[torch.Tensor],
-        context_size: int,
-        device: torch.device,
-    ) -> torch.Tensor:
-        covered = torch.cat([t[b] for t in target_idx_list])
-        all_idx = torch.arange(num_patches, device=device)
-        mask = torch.ones(num_patches, dtype=torch.bool, device=device)
-        mask[covered] = False
-        available = all_idx[mask]
-
-        n = min(context_size, available.numel())
-        perm = torch.randperm(available.numel(), device=device)[:n]
-        return available[perm]

@@ -99,7 +99,7 @@ class BaseTester(ABC):
             raise
         finally:
             for cb in call_backs:
-                cb.on_training_end(self)
+                cb.on_testing_end(self)
 
         if total_samples == 0:
             logger.warning("No samples were evaluated")
@@ -231,11 +231,22 @@ class CNNTester(BaseTester):
             "y_true": label.detach().cpu().numpy() if isinstance(label, torch.Tensor) else None,
         }
 
+        metrics: dict[str, float] = {
+            "output_mean": float(out.mean().item()),
+            "output_std":  float(out.std().item()),
+        }
+
         if label is not None and isinstance(label, torch.Tensor):
             loss = self._compute_loss(out, label)
-            return {"loss": float(loss.item())}
+            metrics["loss"] = float(loss.item())
+            metrics["mae"]  = float((out - label).abs().mean().item())
+            metrics["rmse"] = float(loss.sqrt().item())
+            cos = torch.nn.functional.cosine_similarity(
+                out.flatten(1), label.flatten(1), dim=1
+            ).mean()
+            metrics["cosine_sim"] = float(cos.item())
 
-        return {"output_mean": float(out.mean().item())}
+        return metrics
 
     def _eval_mode(self) -> None:
         self.cnn_block.eval()
@@ -251,13 +262,13 @@ class CNNTester(BaseTester):
         self.cnn_block.to(device)
 
 
-# if __name__ == "__main__":
-#     cfg = load_yaml("configs/config.yaml")
-#     cnn_tester = CNNTester(**CNNTester.build_kwargs(cfg))
+if __name__ == "__main__":
+    cfg = load_yaml("configs/config.yaml")
+    cnn_tester = CNNTester(**CNNTester.build_kwargs(cfg))
 
-#     x = torch.randn(4, 3, 32, 32)
-#     y = torch.randn(4, 32, 30, 30)
-#     loader = DataLoader(TensorDataset(x, y), batch_size=2)
-#     print(cnn_tester.test(loader))
+    x = torch.randn(4, 3, 32, 32)
+    y = torch.randn(4, 32, 30, 30)
+    loader = DataLoader(TensorDataset(x, y), batch_size=2)
+    print(cnn_tester.test(loader))
 
 

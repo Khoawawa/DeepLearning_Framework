@@ -175,7 +175,7 @@ def test_cnn_tester_test_lifecycle(tmp_path: Path) -> None:
     assert tester.global_step == 3
     assert mock_cb.on_step_end.call_count == 3
     assert mock_cb.on_epoch_end.call_count == 1
-    assert mock_cb.on_training_end.call_count == 1
+    assert mock_cb.on_testing_end.call_count == 1
 
 
 def test_cnn_tester_test_without_labels() -> None:

@@ -336,8 +336,13 @@ def test_plot_callback_curves_and_scatter(tmp_path: Path) -> None:
     # Finish training
     cb.on_training_end(runner)
     final_plot = tmp_path / "train_curves_final.png"
-    scatter_plot = tmp_path / "test_scatter.png"
     assert final_plot.exists()
+
+    # Test TestPlotCallBack
+    test_cb = TestPlotCallBack(output_path=tmp_path)
+    test_cb.on_step_end(runner, {"loss": 0.4}, step=1)
+    test_cb.on_testing_end(runner)
+    scatter_plot = tmp_path / "test_scatter.png"
     assert scatter_plot.exists()
 
 

@@ -13,6 +13,7 @@ from utils.common_utils import (
     Registry,
     load_env,
     CONFIG_ROOT,
+    PROJECT_ROOT,
 )
 
 
@@ -99,7 +100,7 @@ def test_all_existing_yaml_configs_parseable() -> None:
 
 def test_resolve_output_path() -> None:
     out_path = resolve_output_path("runs", "exp1")
-    assert out_path == CONFIG_ROOT / "runs" / "exp1"
+    assert out_path == PROJECT_ROOT / "runs" / "exp1"
 
     with pytest.raises(ValueError, match="Run name cannot be empty"):
         resolve_output_path("runs", "   ")

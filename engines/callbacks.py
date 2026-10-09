@@ -15,7 +15,6 @@ from collections import defaultdict
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from utils.validation import Validation
 
 
 class BaseCallBack(ABC):
@@ -42,10 +41,13 @@ class CheckpointCallBack(BaseCallBack):
     
     def __init__(self, output_path: str | Path, save_every_steps: int = 1000, keep_every_epochs: int = 10) -> None:
         super().__init__(output_path)
-        Validation.require_positive(save_every_steps, name="save_every_steps")
-        Validation.require_positive(keep_every_epochs, name="keep_every_epochs")
+        if save_every_steps <= 0:
+            raise ValueError(f"save_every_steps must be > 0, got {save_every_steps}")
+        if keep_every_epochs <= 0:
+            raise ValueError(f"keep_every_epochs must be > 0, got {keep_every_epochs}")
         self.save_every_steps = save_every_steps
         self.keep_every_epochs = keep_every_epochs
+
     
     def _save(self, runner: IRunner, file_name: str) -> None:
         path = self.output_path / file_name
@@ -82,7 +84,8 @@ class CheckpointCallBack(BaseCallBack):
 class LoggingCallBack(BaseCallBack):
     def __init__(self, output_path: str | Path, log_every_steps: int = 50) -> None:
         super().__init__(output_path)
-        Validation.require_positive(log_every_steps, name="log_every_steps")
+        if log_every_steps <= 0:
+            raise ValueError(f"log_every_steps must be > 0, got {log_every_steps}")
         self.log_every_steps = log_every_steps
         self._epoch_metric_sums: dict[str, float] = {}
         self._epoch_step_count: int = 0
@@ -269,7 +272,8 @@ class CSVLoggerCallBack(BaseCallBack):
 class LRMonitorCallBack(BaseCallBack):
     def __init__(self, output_path: str | Path, log_every_steps: int = 50) -> None:
         super().__init__(output_path)
-        Validation.require_positive(log_every_steps, name="log_every_steps")
+        if log_every_steps <= 0:
+            raise ValueError(f"log_every_steps must be > 0, got {log_every_steps}")
         self.log_every_steps = log_every_steps
 
     def _get_learning_rates(self, runner: IRunner) -> dict[str, float]:
@@ -381,7 +385,8 @@ class TrainPlotCallBack(BaseCallBack):
         dpi: int = 120,
     ) -> None:
         super().__init__(output_path)
-        Validation.require_positive(plot_every_epochs, name="plot_every_epochs")
+        if( plot_every_epochs <= 0):
+            raise ValueError(f"plot_every_epochs must be > 0, got {plot_every_epochs}")
         self.plot_every_epochs = plot_every_epochs
         self.metrics_to_plot = metrics_to_plot
         self.dpi = dpi
@@ -445,7 +450,8 @@ class TestPlotCallBack(BaseCallBack):
         dpi: int = 120,
     ) -> None:
         super().__init__(output_path)
-        Validation.require_positive(max_points, name="max_points")
+        if max_points <= 0:
+            raise ValueError(f"max_points must be > 0, got {max_points}")
         self.max_points = max_points
         self.dpi = dpi
 

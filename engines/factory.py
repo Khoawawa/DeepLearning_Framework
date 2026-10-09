@@ -14,8 +14,6 @@ from models.convnext.model import ConvNext
 from models.common import JepaMaskSampler
 from loguru import logger
 
-from utils.validation import Validation
-
 from utils.common_utils import raise_and_log
 
 # OPTIMIZER_REGISTRY: dict[str, type[torch.optim.Optimizer]] = {
@@ -37,107 +35,56 @@ ENCODER_REGISTRY: dict[str, type[Encoder]] = {
 class Factory:
     
     def build_dataset(self, data_cfg: dict[str, Any]) -> Dataset:
-        Validation.require_keys(data_cfg, ["name"], context="dataset config")
-        name = data_cfg["name"].lower()
-        if name not in DATASET_REGISTRY:
-            raise_and_log(f"Unknown dataset '{name}'. "
-                          f"Available: {DATASET_REGISTRY.keys()}")
+        if "name" not in data_cfg and "type" not in data_cfg:
+            raise_and_log("Dataset must have a `name`/`type` field")
+            
+        dataset_name = data_cfg["name"].lower() if "name" in data_cfg else data_cfg["type"].lower()
         kwargs = {k: v for k, v in data_cfg.items() if k != "name"}
-        dataset = DATASET_REGISTRY.build(name, **kwargs)
-        logger.debug(f"Built dataset '{name}'")
+        dataset = DATASET_REGISTRY.build(dataset_name, **kwargs)
+        logger.debug(f"Built dataset '{dataset_name}'")
         return dataset
         
     def build_dataloader(self, data_cfg: dict[str, Any], is_train: bool) -> DataLoader:
-        Validation.require_keys(data_cfg, ["batch_size"], context="dataloader config")
-        batch_size = data_cfg["batch_size"]
-        if batch_size <= 0:
-            raise_and_log(f"batch_size must be > 0, got {batch_size}")
-
-        dataset = self.build_dataset(data_cfg)
         dataloader = DataLoader(
-            dataset,
-            batch_size=batch_size,
+            self.build_dataset(data_cfg),
+            batch_size=data_cfg["batch_size"],
             num_workers=data_cfg.get("num_workers", 1),
-            shuffle=is_train,
+            shuffle = is_train
         )
         logger.info(f"Built dataloader with {len(dataloader)} batches")
         return dataloader
     
     def build_trainer(self, cfg: dict[str, Any]) -> ITrainer:
-        Validation.require_keys(cfg, ["name"], context="trainer config")
-        name = cfg["name"].lower()
-
-        trainer_cls = TRAINER_BUILDER_REGISTRY.get(name)
-        if trainer_cls is None:
-            raise_and_log(
-                f"Unknown trainer '{name}'. "
-                f"Available: {list(TRAINER_BUILDER_REGISTRY.keys())}"
-            )
-
-        # 1) validate required state keys
-        for key in trainer_cls.required_states():
-            if key not in cfg:
-                raise_and_log(
-                    f"Trainer '{name}' requires config field '{key}'"
-                )
-
-        # 2) build kwargs (builder tự validate nội bộ)
-        try:
-            kwargs = trainer_cls.build_kwargs(cfg)
-        except (KeyError, TypeError, AttributeError) as e:
-            raise_and_log(f"Failed to build kwargs for trainer '{name}': {e}")
-
-        if not isinstance(kwargs, dict):
-            raise_and_log(
-                f"{trainer_cls.__name__}.build_kwargs must return dict, "
-                f"got {type(kwargs).__name__}"
-            )
-        # 3) instantiate
-        try:
-            trainer = trainer_cls(**kwargs)
-        except TypeError as e:
-            raise_and_log(f"Invalid kwargs for trainer '{name}': {e}")
-
-        # 4) interface check
+        trainer_name = cfg["name"].lower()
+        trainer_cls: ITrainerBuilder = TRAINER_BUILDER_REGISTRY.get(trainer_name)
+        
+        for c in trainer_cls.required_states():
+            if c not in cfg:
+                raise_and_log(f"Trainer builder {trainer_name} requires component {c}")
+        
+        
+        trainer = trainer_cls(**trainer_cls.build_kwargs(cfg))
+    
         if not isinstance(trainer, ITrainer):
-            raise_and_log(
-                f"Trainer '{name}' must implement ITrainer interface"
-            )
-
-        logger.info(f"Built trainer '{name}'")
+            raise_and_log(f"Trainer {trainer_name} must implement ITrainer interface")
+        
         return trainer
         
     def build_tester(self, cfg: dict[str, Any]) -> ITester:
-        Validation.require_keys(cfg, ["name"], context="tester config")
-        name = cfg["name"].lower()
+        tester_name = cfg["name"].lower()
+        tester_cls: ITesterBuilder = TESTER_BUILDER_REGISTRY.get(tester_name)
 
-        tester_cls = TESTER_BUILDER_REGISTRY.get(name)
-        if tester_cls is None:
-            raise_and_log(
-                f"Unknown tester '{name}'. "
-                f"Available: {list(TESTER_BUILDER_REGISTRY.keys())}"
-            )
+        for c in tester_cls.required_components():
+            if c not in cfg:
+                raise ValueError(f"Tester builder {tester_name} requires config field '{c}'")
 
-        for key in tester_cls.required_components():
-            if key not in cfg:
-                raise_and_log(
-                    f"Tester '{name}' requires config field '{key}'"
-                )
-
-        try:
-            kwargs = tester_cls.build_kwargs(cfg)
-        except (KeyError, TypeError, AttributeError) as e:
-            raise_and_log(f"Failed to build kwargs for tester '{name}': {e}")
-
-        try:
-            tester = tester_cls(**kwargs)
-        except TypeError as e:
-            raise_and_log(f"Invalid kwargs for tester '{name}': {e}")
+        init_kwargs = tester_cls.build_kwargs(cfg)
+        tester = tester_cls(**init_kwargs)
 
         if not isinstance(tester, ITester):
-            raise_and_log(f"Tester '{name}' must implement ITester")
+            raise TypeError(f"Tester {tester_name} must implement ITester")
 
-        logger.info(f"Built tester '{name}'")
+        logger.info(f"Built tester {tester_name}")
         return tester
     
     def build_inferencer(self, cfg: dict[str, Any]) -> IInferencer:

@@ -2,6 +2,11 @@ docs/**
 .vscode/
 .venv/
 __pycache__/
+.pytest_cache/
+htmlcov/
+report.html
+.coverage
+
 # data
 /data/
 !data/sample_data/
@@ -15,4 +20,3 @@ configs/runs/
 *.pkl
 
 system_rules.md
-tests/

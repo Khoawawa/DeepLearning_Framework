@@ -8,11 +8,11 @@ callbacks:
     keep_every_epochs: 10
 
   logging: true
-  plot:
+  train_plot:
     plot_every_epochs: 5
-    metrics_to_plot: ["loss"]
-    output_path: "runs/exp1"
-
+    metrics_to_plot: [loss, mae]
+  test_plot:
+    max_points: 10000
 # factory_name:
 
 epochs: 3

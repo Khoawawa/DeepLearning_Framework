@@ -8,6 +8,7 @@ from loguru import logger
 import inspect
 from functools import wraps
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_ROOT = Path(__file__).resolve().parent.parent / "configs"
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
@@ -88,7 +89,11 @@ def resolve_output_path(output_dir: str, run_name: str) -> Path:
     if (run_name := run_name.strip()) == "":
         raise_and_log("Run name cannot be empty")
 
-    output_path = CONFIG_ROOT / output_dir / run_name
+    output_dir_path = Path(output_dir)
+    if not output_dir_path.is_absolute():
+        output_dir_path = PROJECT_ROOT / output_dir_path
+
+    output_path = output_dir_path / run_name
     logger.info(f"Set output path to be {output_path}")
     return output_path
 

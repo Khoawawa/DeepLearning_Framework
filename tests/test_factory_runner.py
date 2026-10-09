@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from data_modules.dataset import DummyImageDataset
+from tests.dummy_datasets import DummyImageDataset
 from engines.factory import Factory
 from engines.tester import BaseTester, CNNTester
 from engines.trainer import BaseTrainer, CNNTrainer
@@ -213,3 +213,94 @@ def test_tester_empty_dataloader_returns_empty_metrics() -> None:
     empty_loader = DataLoader(TensorDataset(torch.empty(0, 3, 16, 16)), batch_size=4)
     metrics = tester.test(empty_loader)
     assert metrics == {}
+
+
+def test_factory_invalid_interface_checks() -> None:
+    from unittest.mock import patch
+    factory = Factory()
+
+    with patch("engines.factory.TRAINER_BUILDER_REGISTRY.get") as mock_get:
+        mock_builder = MagicMock()
+        mock_builder.required_states.return_value = []
+        mock_builder.build_kwargs.return_value = {}
+        mock_builder.return_value = "not_a_trainer"
+        mock_get.return_value = mock_builder
+
+        with pytest.raises(ValueError, match="must implement ITrainer interface"):
+            factory.build_trainer({"name": "cnn"})
+
+    with patch("engines.factory.TESTER_BUILDER_REGISTRY.get") as mock_get_tester:
+        mock_builder_t = MagicMock()
+        mock_builder_t.required_components.return_value = []
+        mock_builder_t.build_kwargs.return_value = {}
+        mock_builder_t.return_value = "not_a_tester"
+        mock_get_tester.return_value = mock_builder_t
+
+        with pytest.raises(TypeError, match="must implement ITester"):
+            factory.build_tester({"name": "cnn"})
+
+
+def test_trainer_and_tester_edge_cases(tmp_path: Path) -> None:
+    from engines.callbacks import BaseCallBack
+
+    cnn_block = nn.Conv2d(3, 16, 3)
+    opt = torch.optim.SGD(cnn_block.parameters(), lr=0.01)
+    crit = nn.MSELoss()
+
+    trainer = CNNTrainer(cnn_block=cnn_block, optimizer=opt, criterion=crit)
+
+    class EarlyStopCB(BaseCallBack):
+        def on_step_end(self, runner, metrics, step):
+            runner.should_stop = True
+
+    dataset = DummyImageDataset(num_samples=16, label_shape=(16, 30, 30))
+    loader = DataLoader(dataset, batch_size=4)
+    trainer.fit(loader, num_epochs=2, call_backs=[EarlyStopCB(tmp_path)])
+    assert trainer.global_step == 1
+
+    trainer.load_state_dict({"cnn_block": cnn_block.state_dict(), "optimizers": {"optimizer": opt.state_dict()}})
+    assert trainer.current_epoch == 0
+
+    trainer.to(torch.device("cpu"))
+
+    with pytest.raises(ValueError, match="Missing required cnn config key"):
+        CNNTrainer._build_unique_kwargs({})
+
+    with pytest.raises(ValueError, match="Missing required optimizer config key"):
+        CNNTrainer._build_unique_kwargs({"cnn_block": {"in_channels": 3, "out_channels": 16, "kernel_size": 3}})
+
+    with pytest.raises(ValueError, match="Missing required criterion config key"):
+        CNNTrainer._build_unique_kwargs({
+            "cnn_block": {"in_channels": 3, "out_channels": 16, "kernel_size": 3},
+            "optimizers": {"optimizer": {"type": "SGD", "lr": 0.01}},
+        })
+
+    with pytest.raises(ValueError, match="must be torch tensors"):
+        trainer.training_step({"image": "not_tensor", "label": "not_tensor"})
+
+    tester = CNNTester(cnn_block=cnn_block)
+    state = tester.state_dict()
+    tester.load_state_dict(state)
+    tester.to(torch.device("cpu"))
+
+    class EarlyStopTestCB(BaseCallBack):
+        def on_step_end(self, runner, metrics, step):
+            runner.should_stop = True
+
+    tester.test(loader, call_backs=[EarlyStopTestCB(tmp_path)])
+    assert tester.global_step == 1
+
+    tester_no_crit = CNNTester(cnn_block=cnn_block)
+    tester_no_crit.criterion = None
+    with pytest.raises(ValueError, match="No criterion available"):
+        tester_no_crit._compute_loss(torch.zeros(2), torch.zeros(2))
+
+    with pytest.raises(ValueError, match="Missing required cnn config key"):
+        CNNTester._build_unique_kwargs({})
+
+    with pytest.raises(ValueError, match="is not registered"):
+        CNNTester._build_unique_kwargs({
+            "cnn_block": {"in_channels": 3, "out_channels": 16, "kernel_size": 3},
+            "criteria": {"main": {"type": "non_existent_criterion"}},
+        })
+

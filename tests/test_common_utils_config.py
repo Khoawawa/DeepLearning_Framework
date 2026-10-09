@@ -148,3 +148,115 @@ def test_registry_class() -> None:
 
 def test_load_env(tmp_path: Path) -> None:
     load_env()
+
+
+def test_utils_enum() -> None:
+    from engines.enums.utils_enum import VerboseEnum
+    assert VerboseEnum.NO.value == 0
+    assert VerboseEnum.LOW.value == 1
+    assert VerboseEnum.MEDIUM.value == 2
+    assert VerboseEnum.HIGH.value == 3
+
+
+def test_engine_utils_branches() -> None:
+    import numpy as np
+    import torch
+    from engines.engine_utils import resolve_factory, to_var
+    from engines.factory import Factory
+
+    fact = resolve_factory("general")
+    assert isinstance(fact, Factory)
+
+    arr = np.array([1.0, 2.0, 3.0])
+    res_arr = to_var(arr, torch.device("cpu"))
+    assert isinstance(res_arr, torch.Tensor)
+
+    with pytest.raises(ValueError, match="to_var util doesnt support"):
+        to_var(object(), torch.device("cpu"))
+
+
+def test_torch_utils_resolve_device() -> None:
+    from unittest.mock import patch
+    import torch
+    from utils.torch_utils import resolve_device
+
+    dev = resolve_device("cpu")
+    assert dev.type == "cpu"
+
+    with patch("torch.cuda.is_available", return_value=True):
+        dev_cuda = resolve_device(None)
+        assert dev_cuda.type == "cuda"
+
+
+def test_initializer_decorator() -> None:
+    from utils.common_utils import initializer
+
+    class SampleClass:
+        @initializer
+        def __init__(self, a: int, b: str = "default") -> None:
+            pass
+
+    obj = SampleClass(42)
+    assert obj.a == 42
+    assert obj.b == "default"
+
+
+def test_main_py_full_coverage(tmp_path: Path) -> None:
+    import sys
+    from unittest.mock import MagicMock, patch
+    from torch.utils.data import DataLoader
+    from tests.dummy_datasets import DummyImageDataset
+    from main import configure_logging, main, parse_args, resolve_profile, run
+
+    with patch.dict(os.environ, {"PROFILE": "invalid_profile"}):
+        prof = resolve_profile()
+        assert prof == "prod"
+
+    configure_logging(log_dir=tmp_path / "logs", profile="dev")
+
+    test_args = ["main.py", "-c", "configs/model/cnn.yaml", "-m", "train", "-e", "1"]
+    with patch.object(sys, "argv", test_args):
+        args = parse_args()
+        assert args.config == "configs/model/cnn.yaml"
+
+        bad_args = parse_args()
+        bad_args.epochs = 0
+        with patch("main.load_config", return_value={"model": {"name": "cnn"}, "data": {}}):
+            with pytest.raises(ValueError, match="Please define the number of epochs"):
+                run(bad_args)
+
+        invalid_mode_args = parse_args()
+        invalid_mode_args.mode = "unknown_mode"
+        with patch("main.load_config", return_value={"model": {"name": "cnn"}}):
+            with pytest.raises(ValueError, match="Unknown mode"):
+                run(invalid_mode_args)
+
+        test_run_args = parse_args()
+        test_run_args.mode = "test"
+        test_run_args.config = "configs/model/cnn.yaml"
+
+        mock_factory = MagicMock()
+        mock_factory.build_dataloader.return_value = DataLoader(DummyImageDataset(num_samples=4), batch_size=2)
+        mock_tester = MagicMock()
+        mock_tester.to.return_value = mock_tester
+        mock_factory.build_tester.return_value = mock_tester
+        mock_inferencer = MagicMock()
+        mock_inferencer.to.return_value = mock_inferencer
+        mock_factory.build_inferencer.return_value = mock_inferencer
+
+        with patch("main.resolve_factory", return_value=mock_factory):
+            with patch("main.load_config", return_value={"model": {"name": "cnn"}, "data": {}}):
+                run(test_run_args)
+                assert mock_tester.test.called
+
+                test_run_args.mode = "inference"
+                run(test_run_args)
+                assert mock_factory.build_inferencer.called
+
+        with patch("main.parse_args") as mock_parse:
+            mock_parse.return_value = test_run_args
+            with patch("main.run", side_effect=RuntimeError("Test exception")):
+                assert main() == 1
+            with patch("main.run", return_value=None):
+                assert main() == 0
+

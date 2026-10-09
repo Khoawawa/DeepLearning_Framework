@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -44,7 +46,7 @@ class BaseTester(ABC):
             raise FileNotFoundError(f"Checkpoint {checkpoint_path} not found")
 
         logger.info(f"Loading weights from {checkpoint_path}")
-        state = torch.load(checkpoint_path, map_location=self.device)
+        state = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         self._load_component_state_dict(state)
 
     def test(self, data_loader: DataLoader, checkpoint_path: str | Path | None = None, call_backs: list[CallBack] | None = None,

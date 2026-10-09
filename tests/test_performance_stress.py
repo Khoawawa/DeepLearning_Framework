@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from data_modules.dataset import DummyImageDataset
+from tests.dummy_datasets import DummyImageDataset
 from engines.callbacks import LoggingCallBack, TimerCallBack
 from engines.trainer import CNNTrainer
 

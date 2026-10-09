@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -44,7 +46,7 @@ class BaseTester(ABC):
             raise FileNotFoundError(f"Checkpoint {checkpoint_path} not found")
 
         logger.info(f"Loading weights from {checkpoint_path}")
-        state = torch.load(checkpoint_path, map_location=self.device)
+        state = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         self._load_component_state_dict(state)
 
     def test(self, data_loader: DataLoader, checkpoint_path: str | Path | None = None, call_backs: list[CallBack] | None = None,
@@ -251,13 +253,145 @@ class CNNTester(BaseTester):
         self.cnn_block.to(device)
 
 
-# if __name__ == "__main__":
-#     cfg = load_yaml("configs/config.yaml")
-#     cnn_tester = CNNTester(**CNNTester.build_kwargs(cfg))
+class ModalityTester(BaseTester):
+    """Base tester for single and multi-modality model evaluation."""
 
-#     x = torch.randn(4, 3, 32, 32)
-#     y = torch.randn(4, 32, 30, 30)
-#     loader = DataLoader(TensorDataset(x, y), batch_size=2)
-#     print(cnn_tester.test(loader))
+    def __init__(self, model: nn.Module, criterion: Criterion | None = None):
+        super().__init__()
+        self.model = model
+        self.criterion = criterion or nn.CrossEntropyLoss()
+
+    @classmethod
+    def required_components(cls) -> list[str]:
+        return []
+
+    @classmethod
+    def _build_unique_kwargs(cls, cfg: dict[str, Any]) -> dict[str, Any]:
+        kwargs = {}
+        if "model_instance" in cfg:
+            kwargs["model"] = cfg["model_instance"]
+        elif "model_class" in cfg:
+            model_cls = cfg["model_class"]
+            model_kwargs = cfg.get("model_params", {})
+            kwargs["model"] = model_cls(**model_kwargs)
+        elif "model" in cfg and isinstance(cfg["model"], dict):
+            from models.transformer.model import TransformerModel
+            kwargs["model"] = TransformerModel(**cfg["model"])
+        elif "model" in cfg and isinstance(cfg["model"], nn.Module):
+            kwargs["model"] = cfg["model"]
+        else:
+            raise_and_log("Config must specify 'model_instance', 'model_class', or 'model'")
+
+        if "criteria" in cfg and "main" in cfg["criteria"]:
+            try:
+                crit_cfg = dict(cfg["criteria"]["main"])
+                crit_cls_name = crit_cfg.pop("type", "cross_entropy")
+                crit_cls = CRITERION_REGISTRY.get(crit_cls_name)
+                kwargs["criterion"] = crit_cls(**crit_cfg)
+            except Exception as e:
+                raise_and_log(f"Invalid criterion config: {e}")
+
+        return kwargs
+
+    def _eval_mode(self) -> None:
+        self.model.eval()
+
+    def _get_component_state_dict(self) -> dict[str, Any]:
+        return {"model": self.model.state_dict()}
+
+    def _load_component_state_dict(self, state: dict[str, Any]) -> None:
+        model_state = state.get("model", state)
+        self.model.load_state_dict(model_state)
+
+    def _to_components(self, device: torch.device) -> None:
+        self.model.to(device)
+
+
+@TESTER_BUILDER_REGISTRY.register("vit")
+class ViTTester(ModalityTester):
+    """Tester for Vision Transformer models."""
+
+    def test_step(self, batch: Any) -> dict[str, float]:
+        inp, label = self._unpack_batch(batch)
+        out = self.model(inp)
+        self.last_outputs = {
+            "y_pred": out.detach().cpu().numpy(),
+            "y_true": label.detach().cpu().numpy() if isinstance(label, torch.Tensor) else None,
+        }
+        if label is not None and isinstance(label, torch.Tensor):
+            loss = self._compute_loss(out, label)
+            return {"loss": float(loss.item())}
+        return {"output_mean": float(out.mean().item())}
+
+
+@TESTER_BUILDER_REGISTRY.register("text")
+class TextTester(ModalityTester):
+    """Tester for Text Transformer models."""
+
+    def test_step(self, batch: Any) -> dict[str, float]:
+        if isinstance(batch, dict):
+            inp = batch.get("text", batch.get("x", next(iter(batch.values()))))
+            label = batch.get("label", batch.get("y", None))
+        else:
+            inp, label = self._unpack_batch(batch)
+
+        out = self.model(inp)
+        self.last_outputs = {
+            "y_pred": out.detach().cpu().numpy(),
+            "y_true": label.detach().cpu().numpy() if isinstance(label, torch.Tensor) else None,
+        }
+        if label is not None and isinstance(label, torch.Tensor):
+            loss = self._compute_loss(out, label)
+            return {"loss": float(loss.item())}
+        return {"output_mean": float(out.mean().item())}
+
+
+@TESTER_BUILDER_REGISTRY.register("audio")
+class AudioTester(ModalityTester):
+    """Tester for Audio Transformer models."""
+
+    def test_step(self, batch: Any) -> dict[str, float]:
+        if isinstance(batch, dict):
+            inp = batch.get("audio", batch.get("x", next(iter(batch.values()))))
+            label = batch.get("label", batch.get("y", None))
+        else:
+            inp, label = self._unpack_batch(batch)
+
+        out = self.model(inp)
+        self.last_outputs = {
+            "y_pred": out.detach().cpu().numpy(),
+            "y_true": label.detach().cpu().numpy() if isinstance(label, torch.Tensor) else None,
+        }
+        if label is not None and isinstance(label, torch.Tensor):
+            loss = self._compute_loss(out, label)
+            return {"loss": float(loss.item())}
+        return {"output_mean": float(out.mean().item())}
+
+
+@TESTER_BUILDER_REGISTRY.register("multimodal")
+class MultimodalTester(ModalityTester):
+    """Tester for Multimodal models taking dict batches."""
+
+    def test_step(self, batch: Any) -> dict[str, float]:
+        label = batch.get("label", batch.get("y", None)) if isinstance(batch, dict) else None
+        out = self.model(batch)
+
+        self.last_outputs = {
+            "y_pred": out.detach().cpu().numpy(),
+            "y_true": label.detach().cpu().numpy() if isinstance(label, torch.Tensor) else None,
+        }
+
+        if label is not None and isinstance(label, torch.Tensor):
+            loss = self._compute_loss(out, label)
+            return {"loss": float(loss.item())}
+
+        return {"output_mean": float(out.mean().item())}
+
+
+@TESTER_BUILDER_REGISTRY.register("standard")
+class StandardTester(ViTTester):
+    """General single-modality tester fallback."""
+    pass
+
 
 

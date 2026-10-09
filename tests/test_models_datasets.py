@@ -5,7 +5,8 @@ import pytest
 import torch
 import torch.nn as nn
 
-from data_modules.dataset import CIFAR10Dataset, DummyImageDataset, STL10Dataset
+from data_modules.dataset import CIFAR10Dataset, STL10Dataset
+from tests.dummy_datasets import DummyImageDataset
 from main import configure_logging, resolve_profile
 from models.common import JepaMaskSampler
 from utils.torch_utils import resolve_device, set_seed
@@ -99,3 +100,56 @@ def test_logging_configuration_profiles(tmp_path: Path) -> None:
     configure_logging(log_dir=tmp_path / "logs", profile="dev")
     configure_logging(log_dir=tmp_path / "logs", profile="prod")
     assert (tmp_path / "logs").exists()
+
+
+def test_convnext_components_and_model(tmp_path: Path) -> None:
+    from models.convnext.components.ConvNextBlock import ConvNextBlock, ConvNextBlockConfig
+    from models.convnext.components.LayerNorm import LayerNorm2D
+    from models.convnext.model import ConvNext, ConvNextConfig
+
+    yaml_file = tmp_path / "convnext.yaml"
+    yaml_file.write_text(
+        "block_settings:\n  - in_channels: 16\n    out_channels: 16\n    num_layers: 2\n",
+        encoding="utf-8",
+    )
+    configs = ConvNextBlockConfig.from_yaml(yaml_file)
+    assert len(configs) == 1
+    assert configs[0].in_channels == 16
+
+    block = ConvNextBlock(dim=16, layer_scale=1e-4, stochastic_depth_prob=0.1)
+    x = torch.randn(2, 16, 8, 8)
+    out_block = block(x)
+    assert out_block.shape == x.shape
+
+    ln2d = LayerNorm2D(16)
+    out_ln = ln2d(x)
+    assert out_ln.shape == x.shape
+
+    model = ConvNext(in_channels=3, num_classes=5, dims=[16, 32], depths=[1, 1])
+    img = torch.randn(2, 3, 32, 32)
+    out_model = model(img)
+    assert out_model.shape == (2, 5)
+
+    cfg = ConvNextConfig(in_channels=3, out_channels=16)
+    assert cfg.in_channels == 3
+
+    # Test ConvNext block_settings override
+    block_setting = ConvNextBlockConfig(in_channels=16, num_layers=1)
+    model_custom = ConvNext(in_channels=3, num_classes=5, block_settings=[block_setting])
+    out_custom = model_custom(img)
+    assert out_custom.shape == (2, 5)
+
+
+@patch("data_modules.dataset.CIFAR10")
+def test_cifar10_dataset_init_and_getitem(mock_cifar: MagicMock, tmp_path: Path) -> None:
+    mock_instance = MagicMock()
+    mock_instance.__len__.return_value = 20
+    mock_tensor = torch.zeros((3, 32, 32))
+    mock_instance.__getitem__.return_value = (mock_tensor, 1)
+    mock_cifar.return_value = mock_instance
+
+    dataset = CIFAR10Dataset(root=tmp_path, train=True, image_size=32, download=False)
+    assert len(dataset) == 20
+    sample = dataset[0]
+    assert isinstance(sample, torch.Tensor)
+

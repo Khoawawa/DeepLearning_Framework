@@ -4,6 +4,7 @@ import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
+from unittest import runner
 
 import torch
 from loguru import logger
@@ -30,6 +31,9 @@ class BaseCallBack(ABC):
     def on_training_end(self, runner: IRunner) -> None:
         ...
 
+    def on_testing_end(self, runner: IRunner) -> None:
+        ...
+
 @CALLBACK_REGISTRY.register("checkpoint")
 class CheckpointCallBack(BaseCallBack):
     LATEST_CHECKPOINT_NAME = "latest.pt"
@@ -43,6 +47,7 @@ class CheckpointCallBack(BaseCallBack):
             raise ValueError(f"keep_every_epochs must be > 0, got {keep_every_epochs}")
         self.save_every_steps = save_every_steps
         self.keep_every_epochs = keep_every_epochs
+
     
     def _save(self, runner: IRunner, file_name: str) -> None:
         path = self.output_path / file_name
@@ -70,6 +75,9 @@ class CheckpointCallBack(BaseCallBack):
             self._save(runner, f"epoch_{epoch}.pt")
     
     def on_training_end(self, runner: IRunner) -> None:
+        self._save(runner, self.FINAL_CHECKPOINT_NAME)
+
+    def on_testing_end(self, runner: IRunner) -> None:
         self._save(runner, self.FINAL_CHECKPOINT_NAME)
 
 @CALLBACK_REGISTRY.register("logging")
@@ -330,6 +338,14 @@ class TimerCallBack(BaseCallBack):
 
         logger.info(f"Epoch {epoch} time={epoch_duration:.2f}s total_elapsed={total_duration:.2f}s")
 
+    def on_training_end(self, runner: IRunner) -> None:
+        total = time.perf_counter() - self._start_time
+        logger.info(f"Training finished — total_time={total:.2f}s")
+
+    def on_testing_end(self, runner: IRunner) -> None:
+        total = time.perf_counter() - self._start_time
+        logger.info(f"Testing finished — total_time={total:.2f}s")
+
 
 def build_callbacks(callback_configs: dict[str, dict[str, Any] | bool | None] | None, output_path: str | Path) -> list[CallBack]:
     callbacks: list[CallBack] = []
@@ -359,8 +375,8 @@ def build_callbacks(callback_configs: dict[str, dict[str, Any] | bool | None] | 
         
     return callbacks
 
-@CALLBACK_REGISTRY.register("plot")
-class PlotCallBack(BaseCallBack):
+@CALLBACK_REGISTRY.register("train_plot")
+class TrainPlotCallBack(BaseCallBack):
     def __init__(
         self,
         output_path: str | Path,
@@ -369,35 +385,25 @@ class PlotCallBack(BaseCallBack):
         dpi: int = 120,
     ) -> None:
         super().__init__(output_path)
+        if( plot_every_epochs <= 0):
+            raise ValueError(f"plot_every_epochs must be > 0, got {plot_every_epochs}")
         self.plot_every_epochs = plot_every_epochs
         self.metrics_to_plot = metrics_to_plot
         self.dpi = dpi
 
-        self._history: dict[str, list[float]] = defaultdict(list)
-        self._steps: list[int] = []
+        # step-level buffer (reset mỗi epoch)
         self._step_metrics: dict[str, list[float]] = defaultdict(list)
+        # epoch-level history (giữ xuyên suốt run)
+        self._history: dict[str, list[float]] = defaultdict(list)
 
-        self._test_step_metrics: dict[str, list[float]] = defaultdict(list)
-        self._y_true: list[np.ndarray] = []
-        self._y_pred: list[np.ndarray] = []
-
-    def on_step_end(self, runner, metrics, step):
+    def on_step_end(self, runner: IRunner, metrics: dict[str, float], step: int) -> None:
         for k, v in metrics.items():
             try:
                 self._step_metrics[k].append(float(v))
             except (TypeError, ValueError):
                 pass
-        if metrics:
-            self._steps.append(step)
 
-        last = getattr(runner, "last_outputs", None)
-        if last is not None:
-            if last.get("y_pred") is not None:
-                self._y_pred.append(np.asarray(last["y_pred"]))
-            if last.get("y_true") is not None:
-                self._y_true.append(np.asarray(last["y_true"]))
-
-    def on_epoch_end(self, runner, epoch):
+    def on_epoch_end(self, runner: IRunner, epoch: int) -> None:
         for k, vals in self._step_metrics.items():
             if vals:
                 self._history[k].append(float(np.mean(vals)))
@@ -406,29 +412,73 @@ class PlotCallBack(BaseCallBack):
         if epoch % self.plot_every_epochs == 0 or epoch == 0:
             self._plot_curves(epoch)
 
-    def on_training_end(self, runner):
+    def on_training_end(self, runner: IRunner) -> None:
         self._plot_curves(runner.current_epoch, final=True)
-        self._plot_scatter()
 
-    def _plot_curves(self, epoch: int, final: bool = False):
+    def _plot_curves(self, epoch: int, final: bool = False) -> None:
         if not self._history:
             return
         metrics = self.metrics_to_plot or list(self._history.keys())
         fig, ax = plt.subplots(figsize=(7, 4))
         for k in metrics:
             if k in self._history and self._history[k]:
-                ax.plot(range(1, len(self._history[k]) + 1),
-                        self._history[k], label=k, marker="o", markersize=3)
-        ax.set_xlabel("epoch"); ax.set_ylabel("value"); ax.legend()
+                ax.plot(
+                    range(1, len(self._history[k]) + 1),
+                    self._history[k],
+                    label=k,
+                    marker="o",
+                    markersize=3,
+                )
+        ax.set_xlabel("epoch")
+        ax.set_ylabel("value")
+        ax.legend()
         ax.set_title("Training curves")
         ax.grid(alpha=0.3)
         fig.tight_layout()
         suffix = "final" if final else f"epoch{epoch}"
         fig.savefig(self.output_path / f"train_curves_{suffix}.png", dpi=self.dpi)
         plt.close(fig)
+        logger.info(f"Saved training curves to {self.output_path / f'train_curves_{suffix}.png'}")
 
-    def _plot_scatter(self):
+
+@CALLBACK_REGISTRY.register("test_plot")
+class TestPlotCallBack(BaseCallBack):
+    def __init__(
+        self,
+        output_path: str | Path,
+        max_points: int = 10_000,
+        dpi: int = 120,
+    ) -> None:
+        super().__init__(output_path)
+        if max_points <= 0:
+            raise ValueError(f"max_points must be > 0, got {max_points}")
+        self.max_points = max_points
+        self.dpi = dpi
+
+        self._y_true: list[np.ndarray] = []
+        self._y_pred: list[np.ndarray] = []
+        self._num_points: int = 0
+
+    def on_step_end(self, runner: IRunner, metrics: dict[str, float], step: int) -> None:
+        if self._num_points >= self.max_points:
+            return
+        last = getattr(runner, "last_outputs", None)
+        if last is None:
+            return
+        if last.get("y_pred") is not None:
+            self._y_pred.append(np.asarray(last["y_pred"]))
+        if last.get("y_true") is not None:
+            self._y_true.append(np.asarray(last["y_true"]))
+        # đếm sơ bộ số điểm đã thu
+        if last.get("y_pred") is not None:
+            self._num_points += int(np.asarray(last["y_pred"]).size)
+
+    def on_testing_end(self, runner: IRunner) -> None:
+        self._plot_scatter()
+
+    def _plot_scatter(self) -> None:
         if not self._y_true or not self._y_pred:
+            logger.warning("No y_true/y_pred collected; skip scatter plot")
             return
         yt = np.concatenate(self._y_true, axis=0).reshape(-1)
         yp = np.concatenate(self._y_pred, axis=0).reshape(-1)
@@ -439,9 +489,12 @@ class PlotCallBack(BaseCallBack):
         ax.scatter(yt, yp, s=4, alpha=0.5)
         lim = [min(yt.min(), yp.min()), max(yt.max(), yp.max())]
         ax.plot(lim, lim, "r--", linewidth=1)
-        ax.set_xlabel("y_true"); ax.set_ylabel("y_pred")
-        ax.set_title("y_true vs y_pred"); ax.grid(alpha=0.3)
+        ax.set_xlabel("y_true")
+        ax.set_ylabel("y_pred")
+        ax.set_title("y_true vs y_pred")
+        ax.grid(alpha=0.3)
         fig.tight_layout()
-        fig.savefig(self.output_path / "test_scatter.png", dpi=self.dpi)
+        out = self.output_path / "test_scatter.png"
+        fig.savefig(out, dpi=self.dpi)
         plt.close(fig)
-        logger.info(f"Saved scatter to {self.output_path / 'test_scatter.png'}")
+        logger.info(f"Saved scatter to {out}")

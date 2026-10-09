@@ -59,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-m", "--mode", type=str, default="train", help="Choose between train, test and inference", choices=["train", "test", "inference"])
     parser.add_argument("-d", "--device", type=str,default=None, help="Device to train on")
     parser.add_argument("-e", "--epochs", type=int, default=0, help="Number of epochs")
-    parser.add_argument("-o", "--output_dir", type=str, default="/runs", help="Output directories")
+    parser.add_argument("-o", "--output_dir", type=str, default="runs", help="Output directories")
     parser.add_argument("-r", "--resume_path", type=str, default=None, help="Path to check point to resume from")
     parser.add_argument("--seed", default=42)
     # if left empty will be using the model_name

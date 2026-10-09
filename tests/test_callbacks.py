@@ -13,7 +13,8 @@ from engines.callbacks import (
     EarlyStoppingCallBack,
     LRMonitorCallBack,
     LoggingCallBack,
-    PlotCallBack,
+    TrainPlotCallBack,
+    TestPlotCallBack,
     TimerCallBack,
     build_callbacks,
 )
@@ -29,7 +30,8 @@ def test_callback_registration() -> None:
         "csv_logger",
         "lr_monitor",
         "timer",
-        "plot",
+        "train_plot",
+        "test_plot",
     ]
     for name in expected_callbacks:
         assert name in CALLBACK_REGISTRY
@@ -302,7 +304,7 @@ def test_timer_callback(tmp_path: Path) -> None:
 
 
 def test_plot_callback_curves_and_scatter(tmp_path: Path) -> None:
-    cb = PlotCallBack(
+    cb = TrainPlotCallBack(
         output_path=tmp_path,
         plot_every_epochs=1,
         metrics_to_plot=["loss", "acc"],
@@ -340,7 +342,7 @@ def test_plot_callback_curves_and_scatter(tmp_path: Path) -> None:
 
 
 def test_plot_callback_shape_mismatch_warning(tmp_path: Path) -> None:
-    cb = PlotCallBack(output_path=tmp_path)
+    cb = TrainPlotCallBack(output_path=tmp_path)
     runner = MagicMock(spec=IRunner)
     runner.current_epoch = 1
 
